@@ -10,33 +10,35 @@ export default async function handler(req, res) {
 
   const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWjVQUvMXF0PZkK5f6h3CUOM8OitVQPac6GM8zcqh2XUSbzZ4EetftN-_2Kzop4cQIrg/exec';
   const params = new URLSearchParams(req.query);
+  const targetUrl = `${SCRIPT_URL}?${params.toString()}`;
 
   try {
-    let targetUrl;
-    
+    let response;
     if (req.method === 'POST' && req.body) {
-      const data = encodeURIComponent(JSON.stringify(req.body));
-      targetUrl = `${SCRIPT_URL}?${params.toString()}&data=${data}`;
+      // Enviar como POST con form data (Apps Script acepta postData)
+      const formBody = new URLSearchParams();
+      formBody.append('data', JSON.stringify(req.body));
+      response = await fetch(targetUrl, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { 
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0'
+        },
+        body: formBody.toString()
+      });
     } else {
-      targetUrl = `${SCRIPT_URL}?${params.toString()}`;
+      response = await fetch(targetUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
     }
 
-    console.log('Fetching:', targetUrl.slice(0, 100));
-
-    const response = await fetch(targetUrl, {
-      method: 'GET',
-      redirect: 'follow',
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-
-    console.log('Response status:', response.status);
     const text = await response.text();
-    console.log('Response text:', text.slice(0, 200));
-
     const json = JSON.parse(text);
     res.status(200).json(json);
   } catch (error) {
-    console.error('Proxy error:', error.message);
     res.status(500).json({ ok: false, error: error.message });
   }
 }
