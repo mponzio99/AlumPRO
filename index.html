@@ -1050,7 +1050,7 @@ function renderDetalle() {
       consolidadoFinal[k] = {
         nombre, codigo, largoBarra, costoPorBarra,
         barras: barras.length,
-        costo: barras.filter(b => b.nueva).length * costoPorBarra,
+        costo: barras.length * costoPorBarra,
         detalleBarras: barras.map((b, i) => ({
           barra: i + 1,
           piezas: b.piezas || [],
