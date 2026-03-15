@@ -14,9 +14,20 @@ export default async function handler(req, res) {
   const url = `${SCRIPT_URL}?${params.toString()}`;
   
   try {
-    const response = await fetch(url);
-    const data = await response.json();
-    res.status(200).json(data);
+    const response = await fetch(url, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0'
+      }
+    });
+    const text = await response.text();
+    try {
+      const data = JSON.parse(text);
+      res.status(200).json(data);
+    } catch(e) {
+      console.error('Response was not JSON:', text.slice(0, 500));
+      res.status(500).json({ ok: false, error: 'Invalid JSON from script', raw: text.slice(0, 200) });
+    }
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
