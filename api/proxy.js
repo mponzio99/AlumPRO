@@ -9,24 +9,31 @@ export default async function handler(req, res) {
   }
 
   const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwe3Kh0oBMDEBQk-C7gnqRh3DKYBBjLke2s5V76_vyUJNolH0fTmg4VY2F3SsdZbRVM7Q/exec';
-  
   const params = new URLSearchParams(req.query);
   const url = `${SCRIPT_URL}?${params.toString()}`;
-  
+
   try {
-    const response = await fetch(url, {
+    const fetchOptions = {
       method: 'GET',
       redirect: 'follow',
       headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const text = await response.text();
-    try {
-      const data = JSON.parse(text);
-      res.status(200).json(data);
-    } catch(e) {
-      console.error('Raw response:', text.slice(0, 500));
-      res.status(500).json({ ok: false, error: 'Invalid JSON', raw: text.slice(0, 300) });
+    };
+
+    // Si viene con body (POST), reenviarlo como query param data
+    if (req.method === 'POST' && req.body) {
+      const data = encodeURIComponent(JSON.stringify(req.body));
+      const postUrl = `${url}&data=${data}`;
+      fetchOptions.method = 'GET';
+      const response = await fetch(postUrl, fetchOptions);
+      const text = await response.text();
+      const json = JSON.parse(text);
+      return res.status(200).json(json);
     }
+
+    const response = await fetch(url, fetchOptions);
+    const text = await response.text();
+    const json = JSON.parse(text);
+    res.status(200).json(json);
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
