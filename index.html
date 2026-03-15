@@ -989,35 +989,82 @@ function renderDetalle() {
   }
 
   if (tab === 'calculo') {
-    // Consolidar materiales — robusto ante datos del Sheet
+    // Recalcular bin packing completo del presupuesto para mostrar estado real de barras
+    const pres = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+    const precioKg = getPrecioKgPresupuesto(pres);
+    
+    // Consolidar recalculando desde cero en orden
     const consolidado = {};
+    let barrasAcum = {};
+    
     for (const a of abs) {
-      const opts = Array.isArray(a.optimizacion) ? a.optimizacion : [];
-      for (const opt of opts) {
+      const params = tryParse(a.params, {});
+      const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
+      const perfilesFiltrados = state.perfiles.filter(pf => pf.linea_id === a.linea_id);
+      
+      const agrupados = {};
+      for (const c of cortesRaw) {
+        if (!c.perfil) continue;
+        const key = c.perfil.codigo || c.perfil.id;
+        if (!agrupados[key]) agrupados[key] = [];
+        agrupados[key].push({ largo: c.largo, cantidad: c.cantidad, desc: c.desc });
+      }
+      
+      const { resultado, barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
+      barrasAcum = barrasFinales;
+      
+      for (const opt of resultado) {
         const perfil = opt.perfil || {};
-        const k = perfil.id || perfil.codigo || opt.perfil_id || opt.perfil_nombre || 'desconocido';
-        const nombre = perfil.nombre || perfil.codigo || opt.perfil_nombre || k;
+        const k = perfil.id || perfil.codigo || 'desconocido';
+        const nombre = perfil.nombre || perfil.codigo || k;
         const codigo = perfil.codigo || '';
-        const cantBarras = Number(opt.cantBarras || opt.cant_barras || 0);
-        const costo = Number(opt.costo || 0);
-        const costoPorBarra = cantBarras > 0 ? costo / cantBarras : 0;
         const largoBarra = Number(perfil.largo_barra || 6000);
-        const barras = opt.barras || [];
-        if (!consolidado[k]) consolidado[k] = { nombre, codigo, barras: 0, costo: 0, costoPorBarra, largoBarra, detalleBarras: [] };
-        consolidado[k].barras += cantBarras;
-        consolidado[k].costo += costo;
-        if (!consolidado[k].costoPorBarra && costoPorBarra) consolidado[k].costoPorBarra = costoPorBarra;
-        // Acumular detalle de barras para mostrar cortes
-        barras.forEach((b, bi) => {
-          consolidado[k].detalleBarras.push({ barra: consolidado[k].detalleBarras.length + 1, piezas: b.piezas || [], resto: b.resto, abertura: a.nombre });
+        if (!consolidado[k]) consolidado[k] = { nombre, codigo, barras: 0, costo: 0, costoPorBarra: opt.costoPorBarra, largoBarra, detalleBarras: [] };
+        consolidado[k].barras += opt.cantBarras;
+        consolidado[k].costo += opt.costo;
+        // Agregar barras nuevas de esta abertura al detalle
+        (opt.barras || []).forEach(b => {
+          consolidado[k].detalleBarras.push({
+            barra: consolidado[k].detalleBarras.length + 1,
+            piezas: b.piezas || [],
+            resto: b.resto,
+            abertura: a.nombre,
+            largoBarra,
+          });
         });
       }
     }
+    
+    // Agregar piezas que entraron en barras de aberturas anteriores
+    // Recorrer barrasAcum final para actualizar piezas en detalleBarras
+    // (ya están incluidas porque optimizarCortesConSobrantes mutó las barras existentes)
+    // Actualizar detalleBarras con estado final de todas las barras
+    const consolidadoFinal = {};
+    for (const [k, barras] of Object.entries(barrasAcum)) {
+      const perfil = state.perfiles.find(p => p.codigo === k || p.id === k);
+      if (!perfil) continue;
+      const nombre = perfil.nombre || k;
+      const codigo = perfil.codigo || '';
+      const largoBarra = Number(perfil.largo_barra || 6000);
+      const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
+      consolidadoFinal[k] = {
+        nombre, codigo, largoBarra, costoPorBarra,
+        barras: barras.length,
+        costo: barras.filter(b => b.nueva).length * costoPorBarra,
+        detalleBarras: barras.map((b, i) => ({
+          barra: i + 1,
+          piezas: b.piezas || [],
+          resto: b.resto,
+          largoBarra,
+          nueva: b.nueva,
+        })),
+      };
+    }
 
-    const tieneConsolidado = Object.keys(consolidado).length > 0;
+    const tieneConsolidado = Object.keys(consolidadoFinal).length > 0;
 
     const matRows = tieneConsolidado
-      ? Object.entries(consolidado).map(([k, m]) => {
+      ? Object.entries(consolidadoFinal).map(([k, m]) => {
           // Detalle de barras expandible
           const rowId = 'mr_' + k.replace(/[^a-zA-Z0-9]/g, '_');
           const barrasHtml = m.detalleBarras.map(b => {
