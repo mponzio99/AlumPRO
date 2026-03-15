@@ -261,8 +261,12 @@ async function sheetsGet(sheetName) {
 
 async function sheetsAppend(sheetName, rowObj) {
   try {
-    const url = `${SCRIPT_URL}?action=append&sheet=${encodeURIComponent(sheetName)}&data=${encodeURIComponent(JSON.stringify(rowObj))}`;
-    const res = await fetch(url);
+    const url = `${SCRIPT_URL}?action=append&sheet=${encodeURIComponent(sheetName)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rowObj)
+    });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error);
   } catch(e) { console.error('sheetsAppend error', e); throw e; }
@@ -270,8 +274,12 @@ async function sheetsAppend(sheetName, rowObj) {
 
 async function sheetsUpdateRow(sheetName, id, updates) {
   try {
-    const url = `${SCRIPT_URL}?action=update&sheet=${encodeURIComponent(sheetName)}&id=${encodeURIComponent(id)}&data=${encodeURIComponent(JSON.stringify(updates))}`;
-    const res = await fetch(url);
+    const url = `${SCRIPT_URL}?action=update&sheet=${encodeURIComponent(sheetName)}&id=${encodeURIComponent(id)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error);
   } catch(e) { console.error('sheetsUpdateRow error', e); }
