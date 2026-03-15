@@ -1,0 +1,2295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlumPro — Gestión de Aberturas</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0A0F1E;
+    --surface: #111827;
+    --surface2: #1A2438;
+    --border: #1E2D45;
+    --border2: #263548;
+    --accent: #00E5A0;
+    --accent2: #0066FF;
+    --text: #F0F4FF;
+    --text2: #8899BB;
+    --text3: #4A5A7A;
+    --danger: #FF4D6A;
+    --warning: #FFB830;
+    --info: #2B8EFF;
+    --success: #00E5A0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
+
+  /* HEADER */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 28px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-text { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo-text span { color: var(--accent); }
+  .header-nav { display: flex; gap: 4px; }
+  .nav-btn {
+    padding: 7px 16px; background: transparent; border: none; color: var(--text2);
+    cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif;
+    border-radius: 8px; font-weight: 500; transition: all 0.15s;
+  }
+  .nav-btn:hover { background: var(--surface2); color: var(--text); }
+  .nav-btn.active { background: var(--surface2); color: var(--accent); font-weight: 600; }
+  .back-btn {
+    display: flex; align-items: center; gap: 6px; padding: 7px 14px;
+    background: transparent; border: 1px solid var(--border2); color: var(--text2);
+    cursor: pointer; font-size: 13px; border-radius: 8px; font-family: 'DM Sans', sans-serif;
+  }
+  .back-btn:hover { border-color: var(--text3); color: var(--text); }
+
+  /* LAYOUT */
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  /* BUTTONS */
+  .btn-primary {
+    padding: 10px 22px; background: var(--accent); color: #0A0F1E;
+    border: none; border-radius: 9px; font-weight: 700; cursor: pointer;
+    font-size: 14px; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-secondary {
+    padding: 10px 22px; background: transparent; color: var(--text2);
+    border: 1px solid var(--border2); border-radius: 9px; font-weight: 500;
+    cursor: pointer; font-size: 14px; font-family: 'DM Sans', sans-serif;
+  }
+  .btn-secondary:hover { border-color: var(--text3); color: var(--text); }
+  .btn-danger {
+    padding: 6px 14px; background: transparent; color: var(--danger);
+    border: 1px solid var(--danger)44; border-radius: 7px; font-size: 12px;
+    cursor: pointer; font-family: 'DM Sans', sans-serif;
+  }
+  .btn-icon { background: transparent; border: none; cursor: pointer; padding: 4px; color: var(--text3); font-size: 16px; }
+  .btn-icon:hover { color: var(--text); }
+
+  /* FORM */
+  .form-group { margin-bottom: 18px; }
+  .form-row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .form-row .form-group { flex: 1; min-width: 140px; }
+  label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  input, select, textarea {
+    width: 100%; padding: 10px 14px; background: var(--bg);
+    border: 1px solid var(--border2); border-radius: 8px; color: var(--text);
+    font-size: 14px; outline: none; font-family: 'DM Sans', sans-serif;
+    transition: border-color 0.15s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  input[type=number] { font-family: 'DM Mono', monospace; }
+  select option { background: var(--surface); }
+
+  /* CARDS */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px; transition: border-color 0.2s, transform 0.15s;
+  }
+  .card:hover { border-color: var(--border2); }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card-clickable { cursor: pointer; }
+  .card-clickable:hover { border-color: var(--accent)44; transform: translateY(-1px); }
+
+  /* BADGE */
+  .badge { display: inline-flex; align-items: center; padding: 3px 11px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  /* TABS */
+  .tabs { display: flex; gap: 2px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+  .tab { padding: 10px 18px; background: transparent; border: none; color: var(--text3); cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500; transition: all 0.15s; }
+  .tab:hover { color: var(--text2); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+
+  /* EMPTY STATE */
+  .empty { text-align: center; padding: 64px 24px; }
+  .empty-icon { font-size: 48px; margin-bottom: 14px; opacity: 0.5; }
+  .empty p { color: var(--text3); font-size: 15px; margin-bottom: 20px; }
+
+  /* TABLE */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 14px; color: var(--text3); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); }
+  td { padding: 12px 14px; border-bottom: 1px solid var(--border); color: var(--text2); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  /* MODAL */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal { background: var(--surface); border: 1px solid var(--border2); border-radius: 16px; padding: 28px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+  .modal-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; margin-bottom: 22px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+  /* TOAST */
+  #toast { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+  .toast-msg { padding: 12px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; animation: slideIn 0.2s ease; }
+  .toast-success { background: var(--accent); color: #0A0F1E; }
+  .toast-error { background: var(--danger); color: #fff; }
+  @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* LOADER */
+  .loader { display: flex; align-items: center; justify-content: center; padding: 60px; gap: 12px; color: var(--text3); }
+  .spinner { width: 24px; height: 24px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+
+  /* PAGE HEADER */
+  .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; flex-wrap: wrap; gap: 12px; }
+  .page-title { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; }
+  .page-sub { font-size: 13px; color: var(--text3); margin-top: 3px; }
+
+  /* PRESUPUESTO DETAIL */
+  .detail-header { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px; }
+  .detail-cliente { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 700; }
+  .detail-obra { font-size: 14px; color: var(--text3); margin-top: 3px; }
+  .detail-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  /* ABERTURA CARD */
+  .ab-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .ab-nombre { font-size: 15px; font-weight: 600; }
+  .ab-meta { font-size: 12px; color: var(--text3); margin-top: 3px; font-family: 'DM Mono', monospace; }
+  .ab-costo { font-size: 16px; font-weight: 700; color: var(--accent); text-align: right; }
+
+  /* PREVIEW */
+  .preview-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 14px 0; }
+  .preview-title { font-size: 11px; color: var(--text3); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+  .preview-row { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; font-size: 13px; color: var(--text2); padding: 5px 0; border-bottom: 1px solid var(--border); font-family: 'DM Mono', monospace; }
+  .preview-row:last-child { border-bottom: none; }
+  .preview-total { display: grid; grid-template-columns: 1fr auto; gap: 14px; font-size: 14px; font-weight: 700; color: var(--accent); padding: 10px 0 0; margin-top: 6px; border-top: 1px solid var(--border2); }
+
+  /* RESUMEN */
+  .resumen-row { display: flex; justify-content: space-between; font-size: 14px; color: var(--text2); padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .total-final { display: flex; justify-content: space-between; align-items: center; background: var(--bg); border-radius: 10px; padding: 16px 20px; margin-top: 16px; font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: var(--accent); }
+
+  /* MATERIAL ROW */
+  .mat-row { display: grid; grid-template-columns: 1fr auto auto; gap: 16px; align-items: center; background: var(--surface2); border-radius: 9px; padding: 12px 16px; margin-bottom: 8px; border: 1px solid var(--border); }
+  .mat-nombre { font-size: 14px; font-weight: 500; }
+  .mat-barras { display: flex; gap: 8px; align-items: center; }
+  .mat-badge { background: var(--accent)22; color: var(--accent); padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+  .mat-costo { font-size: 14px; font-weight: 700; font-family: 'DM Mono', monospace; text-align: right; }
+
+  /* AGREGAR ABERTURA */
+  .add-ab-wrap { background: var(--surface); border: 1px solid var(--border2); border-radius: 14px; padding: 24px; margin-top: 12px; }
+  .add-ab-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; margin-bottom: 18px; }
+  .btn-add-ab { width: 100%; padding: 14px; background: transparent; border: 2px dashed var(--border2); border-radius: 12px; color: var(--text3); cursor: pointer; font-size: 14px; margin-top: 12px; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+  .btn-add-ab:hover { border-color: var(--accent)55; color: var(--accent); }
+
+  /* KANBAN */
+  .kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 16px; }
+  .kanban-col { flex: 0 0 280px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+  .kanban-col-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text3); margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
+  .kanban-count { background: var(--surface2); color: var(--text3); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .kanban-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; cursor: pointer; transition: border-color 0.15s; }
+  .kanban-card:hover { border-color: var(--border2); }
+  .kanban-card-cliente { font-size: 14px; font-weight: 600; }
+  .kanban-card-obra { font-size: 12px; color: var(--text3); margin-top: 3px; }
+  .kanban-card-total { font-size: 13px; color: var(--accent); font-weight: 700; margin-top: 10px; font-family: 'DM Mono', monospace; }
+  .kanban-move { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .kanban-move button { padding: 4px 10px; background: transparent; border: 1px solid var(--border2); color: var(--text3); border-radius: 6px; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .kanban-move button:hover { border-color: var(--accent)55; color: var(--accent); }
+
+  /* STOCK */
+  .stock-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 16px; align-items: center; background: var(--surface2); border-radius: 9px; padding: 12px 16px; margin-bottom: 8px; border: 1px solid var(--border); }
+
+  /* CONFIG */
+  .config-section { margin-bottom: 32px; }
+  .config-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; margin-bottom: 14px; color: var(--text2); display: flex; align-items: center; gap: 10px; }
+  .config-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⬡</div>
+    <div class="logo-text">Alum<span>Pro</span></div>
+  </div>
+  <nav class="header-nav" id="mainNav">
+    <button class="nav-btn active" onclick="navigate('presupuestos')">Presupuestos</button>
+    <button class="nav-btn" onclick="navigate('kanban')">Kanban de Obras</button>
+    <button class="nav-btn" onclick="navigate('stock')">Stock</button>
+    <button class="nav-btn" onclick="navigate('config')">Configuracion</button>
+  </nav>
+</header>
+
+<main id="appRoot">
+  <div class="loader"><div class="spinner"></div> Cargando datos...</div>
+</main>
+
+<script>
+// ============================================================
+// CONFIG APPS SCRIPT
+// ============================================================
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzWXdNt0oTNC_I7RsX7o2Y26qfLmUlhnewtl4_ZdQ3bkXPu8q7Rs_U07F0ZnrTMvJR_Lw/exec';
+
+const SHEETS = {
+  presupuestos: 'Presupuestos',
+  aberturas:    'Aberturas',
+  lineas:       'Lineas',
+  perfiles:     'Perfiles',
+  herrajes:     'Herrajes',
+  stock:        'Stock',
+  precios_kg:   'PreciosKg',
+  config:       'Config',
+};
+
+// ============================================================
+// SHEETS API (via Apps Script)
+// ============================================================
+async function sheetsGet(sheetName) {
+  try {
+    const url = `${SCRIPT_URL}?action=get&sheet=${encodeURIComponent(sheetName)}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    return json.ok ? json.data : [];
+  } catch(e) { console.error('sheetsGet error', e); return []; }
+}
+
+async function sheetsAppend(sheetName, rowObj) {
+  try {
+    const url = `${SCRIPT_URL}?action=append&sheet=${encodeURIComponent(sheetName)}&data=${encodeURIComponent(JSON.stringify(rowObj))}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+  } catch(e) { console.error('sheetsAppend error', e); throw e; }
+}
+
+async function sheetsUpdateRow(sheetName, id, updates) {
+  try {
+    const url = `${SCRIPT_URL}?action=update&sheet=${encodeURIComponent(sheetName)}&id=${encodeURIComponent(id)}&data=${encodeURIComponent(JSON.stringify(updates))}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+  } catch(e) { console.error('sheetsUpdateRow error', e); }
+}
+
+async function sheetsDeleteRow(sheetName, id) {
+  try {
+    const url = `${SCRIPT_URL}?action=delete&sheet=${encodeURIComponent(sheetName)}&id=${encodeURIComponent(id)}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+  } catch(e) { console.error('sheetsDeleteRow error', e); }
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function fmt(n) { return '$' + Math.round(Number(n) || 0).toLocaleString('es-AR'); }
+function today() { return new Date().toLocaleDateString('es-AR'); }
+
+function toast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  const el = document.createElement('div');
+  el.className = `toast-msg toast-${type}`;
+  el.textContent = msg;
+  t.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ============================================================
+// ESTADO GLOBAL
+// ============================================================
+let state = {
+  vista: 'presupuestos',
+  presupuestos: [],
+  aberturas: [],
+  lineas: [],
+  perfiles: [],
+  herrajes: [],
+  stock: [],
+  precios_kg: [],
+  config_tipologias: {},
+  presupuestoActivo: null,
+  loading: false,
+  _tab: 'aberturas',
+  _configTab: 'precios',
+};
+
+// ============================================================
+// DATOS INICIALES
+// ============================================================
+const LINEAS_DEFAULT = [
+  { id: 'modena', nombre: 'Modena' },
+];
+
+// Perfiles Modena con código real y peso por tira (kg) - barra siempre 6000mm
+const PERFILES_DEFAULT = [
+  { id: '5200', linea_id: 'modena', codigo: '5200', nombre: 'Zócalo y Cabezal de Marco',      largo_barra: 6000, peso_tira: 8    },
+  { id: '5201', linea_id: 'modena', codigo: '5201', nombre: 'Jamba Lateral',                  largo_barra: 6000, peso_tira: 4.2  },
+  { id: '5204', linea_id: 'modena', codigo: '5204', nombre: 'Zócalo y Cabezal de Hoja N°2',   largo_barra: 6000, peso_tira: 4    },
+  { id: '5203', linea_id: 'modena', codigo: '5203', nombre: 'Parante Lateral N°3',             largo_barra: 6000, peso_tira: 3.66 },
+  { id: '5207', linea_id: 'modena', codigo: '5207', nombre: 'Parante Central',                 largo_barra: 6000, peso_tira: 4    },
+  { id: '5249', linea_id: 'modena', codigo: '5249', nombre: 'Zócalo y Cabezal DVH',            largo_barra: 6000, peso_tira: 4    },
+  { id: '5248', linea_id: 'modena', codigo: '5248', nombre: 'Parante Lateral DVH',             largo_barra: 6000, peso_tira: 3.83 },
+  { id: '5250', linea_id: 'modena', codigo: '5250', nombre: 'Parante Central DVH',             largo_barra: 6000, peso_tira: 3.83 },
+  { id: '5209', linea_id: 'modena', codigo: '5209', nombre: 'Zócalo Alto',                     largo_barra: 6000, peso_tira: 5    },
+  { id: '5252', linea_id: 'modena', codigo: '5252', nombre: 'Zócalo Alto DVH',                 largo_barra: 6000, peso_tira: 6.5  },
+  { id: '5216', linea_id: 'modena', codigo: '5216', nombre: 'Marco Paño Fijo / de Abrir',      largo_barra: 6000, peso_tira: 4.5  },
+  { id: '5221', linea_id: 'modena', codigo: '5221', nombre: 'Travesaño Paño Fijo',             largo_barra: 6000, peso_tira: 4    },
+  { id: '5230', linea_id: 'modena', codigo: '5230', nombre: 'Contravidrio Curvo',              largo_barra: 6000, peso_tira: 1.3  },
+  { id: '5235', linea_id: 'modena', codigo: '5235', nombre: 'Hoja de Abrir Curva',             largo_barra: 6000, peso_tira: 4.8  },
+  { id: '5214', linea_id: 'modena', codigo: '5214', nombre: 'Parante Puerta',                  largo_barra: 6000, peso_tira: 6.5  },
+  { id: '5218', linea_id: 'modena', codigo: '5218', nombre: 'Travesaño Puerta',                largo_barra: 6000, peso_tira: 6.5  },
+  { id: '5206', linea_id: 'modena', codigo: '5206', nombre: 'Tapajunta',                       largo_barra: 6000, peso_tira: 1.25 },
+  { id: '5213', linea_id: 'modena', codigo: '5213', nombre: 'Acople H',                        largo_barra: 6000, peso_tira: 4    },
+  { id: '5240', linea_id: 'modena', codigo: '5240', nombre: 'Umbral 3 Guías',                  largo_barra: 6000, peso_tira: 10   },
+  { id: '5241', linea_id: 'modena', codigo: '5241', nombre: 'Jamba 3 Guías',                   largo_barra: 6000, peso_tira: 8.2  },
+  { id: '5205', linea_id: 'modena', codigo: '5205', nombre: 'Premarco',                        largo_barra: 6000, peso_tira: 2.5  },
+];
+
+const HERRAJES_DEFAULT = [
+  { id: 'h1',  linea_id: 'modena', nombre: 'Rueda corrediza',         precio: 450,  unidad: 'par'   },
+  { id: 'h2',  linea_id: 'modena', nombre: 'Cierre / Falleba',        precio: 380,  unidad: 'u'     },
+  { id: 'h3',  linea_id: 'modena', nombre: 'Burlete',                 precio: 120,  unidad: 'metro' },
+  { id: 'h4',  linea_id: 'modena', nombre: 'Cierre Bi-punto',         precio: 8000, unidad: 'u'     },
+  { id: 'h5',  linea_id: 'modena', nombre: 'Rueda doble',             precio: 3000, unidad: 'u'     },
+  { id: 'h6',  linea_id: 'modena', nombre: 'Felpa',                   precio: 200,  unidad: 'metro' },
+  { id: 'h7',  linea_id: 'modena', nombre: 'T-91 (bolsa)',            precio: 2000, unidad: 'bolsa' },
+  { id: 'h8',  linea_id: 'modena', nombre: 'Tapón antidesagote',      precio: 2000, unidad: 'u'     },
+  { id: 'h9',  linea_id: 'modena', nombre: 'T-87 (bolsa)',            precio: 2000, unidad: 'bolsa' },
+];
+
+// Precios por kg: { id, nombre, tipo (nuevo/recuperado), precio_kg }
+const PRECIOS_KG_DEFAULT = [
+  { id: 'pk1', linea_id: 'modena', nombre: 'Blanco',              tipo: 'nuevo',      precio_kg: 9900  },
+  { id: 'pk2', linea_id: 'modena', nombre: 'Natural (Premarcos)', tipo: 'nuevo',      precio_kg: 8300  },
+  { id: 'pk3', linea_id: 'modena', nombre: 'Blanco ALUAR',        tipo: 'nuevo',      precio_kg: 11800 },
+  { id: 'pk4', linea_id: 'modena', nombre: 'Negro Semimate',      tipo: 'nuevo',      precio_kg: 11900 },
+  { id: 'pk5', linea_id: 'modena', nombre: 'Blanco',              tipo: 'recuperado', precio_kg: 15000 },
+  { id: 'pk6', linea_id: 'modena', nombre: 'Natural (Premarcos)', tipo: 'recuperado', precio_kg: 15000 },
+  { id: 'pk7', linea_id: 'modena', nombre: 'Blanco ALUAR',        tipo: 'recuperado', precio_kg: 15000 },
+  { id: 'pk8', linea_id: 'modena', nombre: 'Negro Semimate',      tipo: 'recuperado', precio_kg: 15000 },
+];
+
+// ============================================================
+// FÓRMULAS DE CORTE
+// ============================================================
+const TIPOS_ABERTURA = {
+  modena: [
+    {
+      id: 'ventana-corrediza',
+      nombre: 'Ventana Corrediza',
+      params: [{ id: 'hojas', nombre: 'Cantidad de hojas', default: 2, min: 2, max: 8 }],
+      cortes: (W, H, p, perfiles) => {
+        const N = p.hojas || 2;
+        const get = cod => perfiles.find(x => x.codigo === cod || x.id === cod);
+        return [
+          { perfil: get('5201'), cantidad: 2,     largo: H,                          desc: 'Jamba lateral (marco)' },
+          { perfil: get('5200'), cantidad: 2,     largo: W - 42,                     desc: 'Zócalo/Cabezal de marco' },
+          { perfil: get('5203'), cantidad: N,     largo: H - 79,                     desc: 'Parante lateral hoja' },
+          { perfil: get('5207'), cantidad: N,     largo: H - 79,                     desc: 'Parante central hoja' },
+          { perfil: get('5204'), cantidad: N * 2, largo: Math.round(W / N) - 24,     desc: 'Zócalo/Cabezal hoja' },
+          { perfil: get('5206'), cantidad: 2,     largo: W + 58,                     desc: 'Tapajunta horiz.' },
+          { perfil: get('5206'), cantidad: 2,     largo: H + 58,                     desc: 'Tapajunta vert.' },
+        ].filter(c => c.perfil);
+      },
+      vidrios: (W, H, p) => {
+        const N = p.hojas || 2;
+        return Array.from({ length: N }, (_, i) => ({
+          desc: `Vidrio hoja ${i + 1}`,
+          ancho: Math.round(W / N) - 73,
+          alto: H - 168,
+        }));
+      },
+      herrajes: (p) => [
+        { id: 'h1', cantidad: p.hojas || 2, desc: 'Ruedas (par x hoja)' },
+        { id: 'h2', cantidad: 1,            desc: 'Cierre' },
+      ],
+    },
+    {
+      id: 'puerta-abrir',
+      nombre: 'Puerta de Abrir',
+      params: [{ id: 'hojas', nombre: 'Cantidad de hojas', default: 1, min: 1, max: 2 }],
+      cortes: (W, H, p, perfiles) => {
+        const N = p.hojas || 1;
+        const get = cod => perfiles.find(x => x.codigo === cod || x.id === cod);
+        return [
+          { perfil: get('5216'), cantidad: 1,     largo: W,       desc: 'Marco horizontal' },
+          { perfil: get('5216'), cantidad: 2,     largo: H,       desc: 'Marco vertical' },
+          { perfil: get('5218'), cantidad: N,     largo: W - 40,  desc: 'Travesaño puerta horiz.' },
+          { perfil: get('5214'), cantidad: N * 2, largo: H - 27,  desc: 'Parante puerta vert.' },
+          { perfil: get('5209'), cantidad: N,     largo: W - 192, desc: 'Zócalo alto' },
+          { perfil: get('5230'), cantidad: 4,     largo: W - 192, desc: 'Contravidrio horiz.' },
+          { perfil: get('5230'), cantidad: 4,     largo: H - 155, desc: 'Contravidrio vert.' },
+          { perfil: get('5206'), cantidad: 1,     largo: W + 58,  desc: 'Tapajunta horiz.' },
+          { perfil: get('5206'), cantidad: 2,     largo: H + 30,  desc: 'Tapajunta vert.' },
+        ].filter(c => c.perfil);
+      },
+      vidrios: (W, H, p) => {
+        const N = p.hojas || 1;
+        return Array.from({ length: N }, (_, i) => ({
+          desc: `Vidrio hoja ${i + 1}`,
+          ancho: W - 203,
+          alto: H - 160,
+        }));
+      },
+      herrajes: (p) => [
+        { id: 'h2', cantidad: 1, desc: 'Cierre/Manija' },
+      ],
+    },
+    {
+      id: 'puerta-ventana-corrediza',
+      nombre: 'Puerta Ventana Corrediza',
+      params: [{ id: 'hojas', nombre: 'Cantidad de hojas', default: 2, min: 2, max: 3 }],
+      cortes: (W, H, p, perfiles) => {
+        const N = p.hojas || 2;
+        const get = cod => perfiles.find(x => x.codigo === cod || x.id === cod);
+
+        // Largo de hoja según cantidad
+        const largoHojaLateral = N === 3 ? Math.round(W / 3) - 7  : Math.round(W / 2) - 24;
+        const largoHojaCentral = N === 3 ? Math.round(W / 3) + 1  : Math.round(W / 2) - 24;
+
+        // Zócalo/Cabezal de hoja (5204)
+        const cortesZocaloCabezal = N === 3
+          ? [
+              { perfil: get('5204'), cantidad: 4, largo: largoHojaLateral, desc: 'Cabezal/Zocalo hoja lateral' },
+              { perfil: get('5204'), cantidad: 2, largo: largoHojaCentral, desc: 'Cabezal/Zocalo hoja central' },
+            ]
+          : [{ perfil: get('5204'), cantidad: N * 2, largo: largoHojaLateral, desc: 'Cabezal/Zocalo hoja' }];
+
+        // Zócalo Alto (5209)
+        const cortesZocaloAlto = N === 3
+          ? [
+              { perfil: get('5209'), cantidad: 2, largo: largoHojaLateral, desc: 'Zocalo alto hoja lateral' },
+              { perfil: get('5209'), cantidad: 1, largo: largoHojaCentral, desc: 'Zocalo alto hoja central' },
+            ]
+          : [{ perfil: get('5209'), cantidad: N, largo: largoHojaLateral, desc: 'Zocalo alto' }];
+
+        // Parantes según cantidad de hojas:
+        // 2 hojas: 2 parantes laterales (5203) + 2 parantes centrales (5207)
+        // 3 hojas: hojas laterales → 1 parante lateral (5203) + 1 central (5207) c/u = 2×5203 + 2×5207
+        //          hoja central   → 2 parantes centrales (5207) = 2×5207
+        //          Total: 2×5203 + 4×5207
+        const cortesParantes = N === 3
+          ? [
+              { perfil: get('5203'), cantidad: 2, largo: H - 79, desc: 'Parante lateral (hojas laterales)' },
+              { perfil: get('5207'), cantidad: 4, largo: H - 79, desc: 'Parante central (todas las hojas)' },
+            ]
+          : [
+              { perfil: get('5203'), cantidad: 2, largo: H - 79, desc: 'Parante lateral hoja' },
+              { perfil: get('5207'), cantidad: 2, largo: H - 79, desc: 'Parante central hoja' },
+            ];
+
+        return [
+          // Marco: 3 guías para 3 hojas, estándar para 2
+          N === 3
+            ? { perfil: get('5241'), cantidad: 2, largo: H,     desc: 'Jamba 3 guias (marco)' }
+            : { perfil: get('5201'), cantidad: 2, largo: H,     desc: 'Jamba lateral (marco)' },
+          N === 3
+            ? { perfil: get('5240'), cantidad: 2, largo: W - 42, desc: 'Umbral 3 guias (marco)' }
+            : { perfil: get('5200'), cantidad: 2, largo: W - 42, desc: 'Umbral y dintel (marco)' },
+          ...cortesParantes,
+          ...cortesZocaloCabezal,
+          ...cortesZocaloAlto,
+          { perfil: get('5206'), cantidad: 1, largo: W + 58, desc: 'Tapajunta horizontal' },
+          { perfil: get('5206'), cantidad: 2, largo: H + 30, desc: 'Tapajunta vertical' },
+          { perfil: get('5205'), cantidad: 2, largo: H + 5,  desc: 'Premarco vertical' },
+          { perfil: get('5205'), cantidad: 2, largo: W + 5,  desc: 'Premarco horizontal' },
+        ].filter(c => c.perfil);
+      },
+      vidrios: (W, H, p) => {
+        const N = p.hojas || 2;
+        if (N === 2) {
+          return [1, 2].map(i => ({
+            desc: 'Vidrio hoja ' + i,
+            ancho: Math.round(W / 2) - 73,
+            alto: H - 222,
+          }));
+        } else {
+          // 3 hojas: 2 laterales + 1 central con largos distintos
+          return [
+            { desc: 'Vidrio hoja 1 (lateral)', ancho: Math.round(W / 3) - 7  - 66, alto: H - 222 },
+            { desc: 'Vidrio hoja 2 (central)', ancho: Math.round(W / 3) + 1  - 66, alto: H - 222 },
+            { desc: 'Vidrio hoja 3 (lateral)', ancho: Math.round(W / 3) - 7  - 66, alto: H - 222 },
+          ];
+        }
+      },
+      herrajes: (p) => {
+        const N = p.hojas || 2;
+        const perimHoja = 1; // se usa para burlete y felpa (perímetro, simplificado a 1 unidad por hoja)
+        return [
+          { id: 'h4',  cantidad: N,     desc: 'Cierre bi-punto (1 x hoja)' },
+          { id: 'h3',  cantidad: N * 2, desc: 'Burlete perimetral (2m x hoja aprox.)' },
+          { id: 'h5',  cantidad: N * 2, desc: 'Rueda doble (2 x hoja)' },
+          { id: 'h6',  cantidad: N * 3, desc: 'Felpa (3m x hoja)' },
+          { id: 'h7',  cantidad: 1,     desc: 'T-91 (bolsa)' },
+          { id: 'h8',  cantidad: 4,     desc: 'Tapones antidesagote' },
+          { id: 'h9',  cantidad: 1,     desc: 'T-87 (bolsa)' },
+        ];
+      },
+    },
+  ],
+};
+
+// ============================================================
+// BIN PACKING + COSTO POR KG
+// ============================================================
+
+// Obtiene los cortes raw de una abertura sin calcular costos
+function getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB) {
+  const tipos = TIPOS_ABERTURA[linea_id];
+  if (!tipos) return [];
+  const tipo = tipos.find(t => t.id === tipo_id);
+  if (!tipo) return [];
+  const perfilesFiltrados = perfilesDB.filter(p => p.linea_id === linea_id);
+  const N = Number(params.hojas) || 1;
+  const cfg = getConfigTipo(linea_id, tipo_id);
+  let cortesRaw;
+  if (cfg && cfg.perfiles && cfg.perfiles.length > 0) {
+    cortesRaw = cfg.perfiles
+      .filter(pf => !pf.solo_si_n || String(pf.solo_si_n) === String(N))
+      .map(pf => {
+        const perfil = perfilesFiltrados.find(p => p.codigo === pf.codigo || p.id === pf.codigo);
+        if (!perfil) return null;
+        const cantNum = Math.round(Function('N','return '+pf.cantidad)(N));
+        const largoNum = evalFormula(pf.formula_largo, W, H, N);
+        return { perfil, cantidad: cantNum, largo: largoNum, desc: pf.rol };
+      }).filter(Boolean);
+  } else {
+    cortesRaw = tipo.cortes(W, H, params, perfilesFiltrados);
+  }
+  return cortesRaw;
+}
+
+// Bin packing First Fit Decreasing sobre una lista de piezas con barras ya existentes
+// existingBarras: { [perfilKey]: [{ piezas, resto }] } — barras ya usadas por aberturas anteriores
+// Devuelve { resultado, barrasFinales }
+function optimizarCortesConSobrantes(cortesAgrupados, perfilesDB, precioKg, existingBarras) {
+  existingBarras = existingBarras || {};
+  const resultado = [];
+  // Clonar barras existentes para no mutarlas
+  const barrasActuales = {};
+  for (const [k, barras] of Object.entries(existingBarras)) {
+    barrasActuales[k] = barras.map(b => ({ piezas: [...b.piezas], resto: b.resto }));
+  }
+
+  for (const [perfilId, piezas] of Object.entries(cortesAgrupados)) {
+    const perfil = perfilesDB.find(p => p.id === perfilId || p.codigo === perfilId);
+    if (!perfil) continue;
+
+    const lista = [];
+    for (const p of piezas) for (let i = 0; i < p.cantidad; i++) lista.push({ largo: Number(p.largo), desc: p.desc });
+    lista.sort((a, b) => b.largo - a.largo);
+
+    // Usar barras existentes de este perfil como punto de partida
+    const barras = barrasActuales[perfilId] || [];
+    const barrasNuevas = []; // solo las barras nuevas que se necesitan para esta abertura
+    let barrasAntesDeEstaAbertura = barras.length;
+
+    for (const pieza of lista) {
+      let ok = false;
+      // Primero intentar en barras ya existentes (sobrantes)
+      for (const b of barras) {
+        if (b.resto >= pieza.largo) {
+          b.piezas.push({ ...pieza, esAhorro: true });
+          b.resto -= pieza.largo;
+          ok = true;
+          break;
+        }
+      }
+      // Si no entró, abrir barra nueva
+      if (!ok) {
+        const nuevaBarra = { piezas: [pieza], resto: Number(perfil.largo_barra) - pieza.largo, nueva: true };
+        barras.push(nuevaBarra);
+        barrasNuevas.push(nuevaBarra);
+      }
+    }
+
+    barrasActuales[perfilId] = barras;
+
+    const pesoTira = Number(perfil.peso_tira) || 0;
+    const costoPorBarra = pesoTira * precioKg;
+    // Solo se cobran las barras NUEVAS que necesitó esta abertura
+    const costoTotal = barrasNuevas.length * costoPorBarra;
+    const esAhorro = barrasNuevas.length === 0; // todas las piezas entraron en sobrantes
+
+    resultado.push({
+      perfil,
+      barras: barrasNuevas,
+      barrasTotal: barras,
+      cantBarras: barrasNuevas.length,
+      cantBarrasTotal: barras.length,
+      barrasAnteriores: barrasAntesDeEstaAbertura,
+      pesoTira,
+      costoPorBarra,
+      costo: costoTotal,
+      esAhorro,
+    });
+  }
+
+  return { resultado, barrasFinales: barrasActuales };
+}
+
+// Versión simple (sin sobrantes) — para compatibilidad
+function optimizarCortes(cortesAgrupados, perfilesDB, precioKg) {
+  return optimizarCortesConSobrantes(cortesAgrupados, perfilesDB, precioKg, {}).resultado;
+}
+
+// Construye el mapa de barras existentes a partir de las aberturas ya guardadas en el presupuesto
+function getBarrasExistentes(absExistentes, perfilesDB) {
+  const barrasMap = {};
+  for (const a of absExistentes) {
+    const opts = Array.isArray(a.optimizacion) ? a.optimizacion : tryParse(a.optimizacion, []);
+    for (const opt of opts) {
+      const perfil = opt.perfil || {};
+      const k = perfil.codigo || perfil.id || opt.perfil_id || '';
+      if (!k) continue;
+      const largoBarra = Number(perfil.largo_barra || 6000);
+      if (!barrasMap[k]) barrasMap[k] = [];
+      // Reconstruir barras desde el detalle guardado
+      const barras = opt.barras || opt.barrasTotal || [];
+      for (const b of barras) {
+        barrasMap[k].push({
+          piezas: (b.piezas || []).map(pz => ({ ...pz })),
+          resto: Number(b.resto || 0),
+        });
+      }
+    }
+  }
+  return barrasMap;
+}
+
+
+function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesDB, precioVidrio, precioKg, barrasExistentes) {
+  const tipos = TIPOS_ABERTURA[linea_id];
+  if (!tipos) return null;
+  const tipo = tipos.find(t => t.id === tipo_id);
+  if (!tipo) return null;
+  const perfilesFiltrados = perfilesDB.filter(p => p.linea_id === linea_id);
+  const N = Number(params.hojas) || 1;
+  const cfg = getConfigTipo(linea_id, tipo_id);
+
+  const cortesRaw = getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB);
+
+  // Vidrios
+  let vidrios;
+  if (cfg && cfg.vidrio && cfg.vidrio.formula_ancho && cfg.vidrio.formula_alto) {
+    const vAncho = evalFormula(cfg.vidrio.formula_ancho, W, H, N);
+    const vAlto  = evalFormula(cfg.vidrio.formula_alto,  W, H, N);
+    vidrios = Array.from({ length: N }, (_, i) => ({ desc: 'Vidrio hoja ' + (i+1), ancho: vAncho, alto: vAlto }));
+  } else {
+    vidrios = tipo.vidrios(W, H, params);
+  }
+
+  const agrupados = {};
+  for (const c of cortesRaw) {
+    if (!c.perfil) continue;
+    const key = c.perfil.codigo || c.perfil.id;
+    if (!agrupados[key]) agrupados[key] = [];
+    agrupados[key].push({ largo: c.largo, cantidad: c.cantidad, desc: c.desc });
+  }
+
+  const { resultado: optimizacion, barrasFinales } = optimizarCortesConSobrantes(
+    agrupados, perfilesFiltrados, precioKg, barrasExistentes || {}
+  );
+
+  const costoPerfiles = optimizacion.reduce((s, o) => s + o.costo, 0);
+  const costoVidrios = vidrios.reduce((s, v) => s + (v.ancho / 1000) * (v.alto / 1000) * precioVidrio, 0);
+  const herrajesCalc = tipo.herrajes(params);
+  const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === linea_id);
+  const costoHerrajes = herrajesCalc.reduce((s, h) => {
+    const hObj = herrajesFiltrados.find(x => x.id === h.id);
+    return s + (hObj ? Number(hObj.precio) * h.cantidad : 0);
+  }, 0);
+  return { optimizacion, vidrios, costoPerfiles, costoVidrios, costoHerrajes, barrasFinales };
+}
+
+// ============================================================
+// CONFIGURACIÓN DE TIPOLOGÍAS (holguras y perfiles editables)
+// Estructura: { linea_id: { tipo_id: { perfiles: [...], vidrio: {...} } } }
+// ============================================================
+const CONFIG_TIPOLOGIAS_DEFAULT = {
+  modena: {
+    'ventana-corrediza': {
+      perfiles: [
+        { rol: 'Jamba lateral (marco)',   codigo: '5201', cantidad: '2',   formula_largo: 'H',          solo_si_n: '' },
+        { rol: 'Zocalo/Cabezal marco',    codigo: '5200', cantidad: '2',   formula_largo: 'W - 42',     solo_si_n: '' },
+        { rol: 'Parante lateral hoja',    codigo: '5203', cantidad: 'N',   formula_largo: 'H - 79',     solo_si_n: '' },
+        { rol: 'Parante central hoja',    codigo: '5207', cantidad: 'N',   formula_largo: 'H - 79',     solo_si_n: '' },
+        { rol: 'Zocalo/Cabezal hoja',     codigo: '5204', cantidad: 'N*2', formula_largo: '(W/N) - 24', solo_si_n: '' },
+        { rol: 'Tapajunta horiz.',        codigo: '5206', cantidad: '2',   formula_largo: 'W + 58',     solo_si_n: '' },
+        { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 58',     solo_si_n: '' },
+      ],
+      vidrio: { formula_ancho: '(W/N) - 73', formula_alto: 'H - 168' },
+    },
+    'puerta-abrir': {
+      perfiles: [
+        { rol: 'Marco horizontal',        codigo: '5216', cantidad: '1',   formula_largo: 'W',          solo_si_n: '' },
+        { rol: 'Marco vertical',          codigo: '5216', cantidad: '2',   formula_largo: 'H',          solo_si_n: '' },
+        { rol: 'Travesano puerta horiz.', codigo: '5218', cantidad: 'N',   formula_largo: 'W - 40',     solo_si_n: '' },
+        { rol: 'Parante puerta vert.',    codigo: '5214', cantidad: 'N*2', formula_largo: 'H - 27',     solo_si_n: '' },
+        { rol: 'Zocalo alto',             codigo: '5209', cantidad: 'N',   formula_largo: 'W - 192',    solo_si_n: '' },
+        { rol: 'Contravidrio horiz.',     codigo: '5230', cantidad: '4',   formula_largo: 'W - 192',    solo_si_n: '' },
+        { rol: 'Contravidrio vert.',      codigo: '5230', cantidad: '4',   formula_largo: 'H - 155',    solo_si_n: '' },
+        { rol: 'Tapajunta horiz.',        codigo: '5206', cantidad: '1',   formula_largo: 'W + 58',     solo_si_n: '' },
+        { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 30',     solo_si_n: '' },
+      ],
+      vidrio: { formula_ancho: 'W - 203', formula_alto: 'H - 160' },
+    },
+    'puerta-ventana-corrediza': {
+      perfiles: [
+        // 2 hojas — marco estándar
+        { rol: 'Jamba lateral',           codigo: '5201', cantidad: '2',   formula_largo: 'H',                solo_si_n: '2' },
+        { rol: 'Umbral y dintel',         codigo: '5200', cantidad: '2',   formula_largo: 'W - 42',           solo_si_n: '2' },
+        // 3 hojas — marco 3 guías
+        { rol: 'Jamba 3 guias',           codigo: '5241', cantidad: '2',   formula_largo: 'H',                solo_si_n: '3' },
+        { rol: 'Umbral 3 guias',          codigo: '5240', cantidad: '2',   formula_largo: 'W - 42',           solo_si_n: '3' },
+        // Parantes — 2 hojas
+        { rol: 'Parante lateral hoja',    codigo: '5203', cantidad: '2',   formula_largo: 'H - 79',           solo_si_n: '2' },
+        { rol: 'Parante central hoja',    codigo: '5207', cantidad: '2',   formula_largo: 'H - 79',           solo_si_n: '2' },
+        // Parantes — 3 hojas (2 lat + 4 centrales)
+        { rol: 'Parante lateral hoja',    codigo: '5203', cantidad: '2',   formula_largo: 'H - 79',           solo_si_n: '3' },
+        { rol: 'Parante central hoja',    codigo: '5207', cantidad: '4',   formula_largo: 'H - 79',           solo_si_n: '3' },
+        // Cabezal/Zocalo hoja — 2 hojas
+        { rol: 'Cabezal/Zocalo hoja lat.',codigo: '5204', cantidad: 'N*2', formula_largo: '(W/N) - 24',       solo_si_n: '2' },
+        // Cabezal/Zocalo hoja — 3 hojas (laterales y central tienen largos distintos)
+        { rol: 'Cabezal/Zocalo lat. x2',  codigo: '5204', cantidad: '4',   formula_largo: 'Math.round(W/3)-7',solo_si_n: '3' },
+        { rol: 'Cabezal/Zocalo central',  codigo: '5204', cantidad: '2',   formula_largo: 'Math.round(W/3)+1',solo_si_n: '3' },
+        // Zocalo alto — 2 hojas
+        { rol: 'Zocalo alto',             codigo: '5209', cantidad: 'N',   formula_largo: '(W/N) - 24',       solo_si_n: '2' },
+        // Zocalo alto — 3 hojas
+        { rol: 'Zocalo alto lat. x2',     codigo: '5209', cantidad: '2',   formula_largo: 'Math.round(W/3)-7',solo_si_n: '3' },
+        { rol: 'Zocalo alto central',     codigo: '5209', cantidad: '1',   formula_largo: 'Math.round(W/3)+1',solo_si_n: '3' },
+        // Tapajuntas y premarco — siempre
+        { rol: 'Tapajunta horiz.',        codigo: '5206', cantidad: '1',   formula_largo: 'W + 58',           solo_si_n: '' },
+        { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 30',           solo_si_n: '' },
+        { rol: 'Premarco vertical',       codigo: '5205', cantidad: '2',   formula_largo: 'H + 5',            solo_si_n: '' },
+        { rol: 'Premarco horizontal',     codigo: '5205', cantidad: '2',   formula_largo: 'W + 5',            solo_si_n: '' },
+      ],
+      vidrio: { formula_ancho: '(W/N) - 73', formula_alto: 'H - 222' },
+    },
+  },
+};
+
+// Obtener config activa para una tipología (usa state si fue editada, sino default)
+function getConfigTipo(linea_id, tipo_id) {
+  const custom = state.config_tipologias?.[linea_id]?.[tipo_id];
+  const def = CONFIG_TIPOLOGIAS_DEFAULT[linea_id]?.[tipo_id];
+  return custom || def || null;
+}
+
+// Evaluar fórmula simple (solo operaciones con W, H, N)
+function evalFormula(formula, W, H, N) {
+  try {
+    return Math.round(Function('W','H','N', 'return ' + formula)(W, H, N || 1));
+  } catch { return 0; }
+}
+
+
+const ESTADOS = [
+  { id: 'generado',  label: 'Generado',          color: '#4A5A7A' },
+  { id: 'enviado',   label: 'Enviado al cliente', color: '#2B8EFF' },
+  { id: 'aprobado',  label: 'Aprobado',           color: '#00E5A0' },
+  { id: 'rechazado', label: 'Rechazado',          color: '#FF4D6A' },
+];
+const KANBAN_COLS = [
+  { id: 'pendiente',   label: 'Pendiente',          color: '#4A5A7A' },
+  { id: 'materiales',  label: 'Compra materiales',  color: '#FFB830' },
+  { id: 'construccion',label: 'En construcción',    color: '#2B8EFF' },
+  { id: 'entrega',     label: 'Entrega',            color: '#A855F7' },
+  { id: 'finalizado',  label: 'Finalizado',         color: '#00E5A0' },
+];
+
+function estadoBadge(estadoId) {
+  const e = ESTADOS.find(x => x.id === estadoId) || ESTADOS[0];
+  return `<span class="badge" style="background:${e.color}22;color:${e.color}">${e.label}</span>`;
+}
+
+// ============================================================
+// NAVEGACIÓN
+// ============================================================
+function navigate(vista, extra) {
+  state.vista = vista;
+  state.presupuestoActivo = extra || null;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const map = { presupuestos: 0, kanban: 1, stock: 2, config: 3 };
+  const btns = document.querySelectorAll('.nav-btn');
+  if (map[vista] !== undefined) btns[map[vista]]?.classList.add('active');
+  render();
+}
+
+// ============================================================
+// LOAD DATA
+// ============================================================
+async function loadAll() {
+  setLoading(true);
+  try {
+    const [presupuestos, aberturas, lineas, perfiles, herrajes, stock, precios_kg, configRows] = await Promise.all([
+      sheetsGet(SHEETS.presupuestos),
+      sheetsGet(SHEETS.aberturas),
+      sheetsGet(SHEETS.lineas),
+      sheetsGet(SHEETS.perfiles),
+      sheetsGet(SHEETS.herrajes),
+      sheetsGet(SHEETS.stock),
+      sheetsGet(SHEETS.precios_kg),
+      sheetsGet(SHEETS.config),
+    ]);
+    state.presupuestos = presupuestos;
+    state.aberturas = aberturas.map(a => ({ ...a, params: tryParse(a.params, {}), optimizacion: tryParse(a.optimizacion, []), vidrios: tryParse(a.vidrios, []) }));
+    state.lineas     = lineas.length     ? lineas     : LINEAS_DEFAULT;
+    state.perfiles   = perfiles.length   ? perfiles   : PERFILES_DEFAULT;
+    state.herrajes   = herrajes.length   ? herrajes   : HERRAJES_DEFAULT;
+    state.precios_kg = precios_kg.length ? precios_kg : PRECIOS_KG_DEFAULT;
+    state.stock      = stock;
+
+    // Restaurar config de tipologías guardada
+    state.config_tipologias = {};
+    for (const row of configRows) {
+      if (row.key && row.key.startsWith('tipologia_')) {
+        try {
+          const parsed = JSON.parse(row.value);
+          // key formato: tipologia_linea_id__tipo_id
+          const parts = row.key.replace('tipologia_', '').split('__');
+          const [linea_id, tipo_id] = parts;
+          if (linea_id && tipo_id) {
+            if (!state.config_tipologias[linea_id]) state.config_tipologias[linea_id] = {};
+            state.config_tipologias[linea_id][tipo_id] = parsed;
+          }
+        } catch {}
+      }
+    }
+
+    // Cargar defaults si es primera vez
+    if (!lineas.length)     for (const l of LINEAS_DEFAULT)     await sheetsAppend(SHEETS.lineas, l);
+    if (!perfiles.length)   for (const p of PERFILES_DEFAULT)   await sheetsAppend(SHEETS.perfiles, p);
+    if (!herrajes.length)   for (const h of HERRAJES_DEFAULT)   await sheetsAppend(SHEETS.herrajes, h);
+    if (!precios_kg.length) for (const p of PRECIOS_KG_DEFAULT) await sheetsAppend(SHEETS.precios_kg, p);
+  } catch(e) { toast('Error cargando datos', 'error'); }
+  setLoading(false);
+  render();
+}
+
+function tryParse(val, def) { try { return val ? JSON.parse(val) : def; } catch { return def; } }
+function setLoading(v) { state.loading = v; }
+
+// ============================================================
+// RENDER PRINCIPAL
+// ============================================================
+function attachEvents() {}
+
+function render() {
+  const root = document.getElementById('appRoot');
+  if (state.loading) { root.innerHTML = '<div class="loader"><div class="spinner"></div> Cargando...</div>'; return; }
+  if (state.vista === 'presupuestos' && !state.presupuestoActivo) root.innerHTML = renderLista();
+  else if (state.vista === 'presupuestos' && state.presupuestoActivo) root.innerHTML = renderDetalle();
+  else if (state.vista === 'kanban') root.innerHTML = renderKanban();
+  else if (state.vista === 'stock') root.innerHTML = renderStock();
+  else if (state.vista === 'config') root.innerHTML = renderConfig();
+  attachEvents();
+}
+
+// ============================================================
+// LISTA PRESUPUESTOS
+// ============================================================
+function renderLista() {
+  const ps = state.presupuestos;
+  const cards = ps.length ? ps.map(p => {
+    const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
+    const total = fmt(p.total_final);
+    return `
+    <div class="card card-clickable" onclick="navigate('presupuestos', '${p.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+        <div>
+          <div style="font-size:16px;font-weight:700;font-family:'Syne',sans-serif">${p.cliente}</div>
+          <div style="font-size:13px;color:var(--text3);margin-top:2px">${p.obra}</div>
+        </div>
+        ${estadoBadge(p.estado)}
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;color:var(--text3)">${abs.length} abertura${abs.length!==1?'s':''}</span>
+        <span style="font-size:17px;font-weight:800;color:var(--accent);font-family:'DM Mono',monospace">${total}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+        <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${p.fecha}</div>
+        <button onclick="event.stopPropagation();imprimirPresupuesto('${p.id}')" style="display:flex;align-items:center;gap:5px;padding:5px 12px;background:transparent;border:1px solid var(--border2);border-radius:7px;color:var(--text3);cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          PDF
+        </button>
+        <button onclick="event.stopPropagation();exportarWord('${p.id}')" style="display:flex;align-items:center;gap:5px;padding:5px 12px;background:transparent;border:1px solid var(--border2);border-radius:7px;color:var(--text3);cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;" onmouseover="this.style.borderColor='#2B8EFF';this.style.color='#2B8EFF'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Word
+        </button>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📋</div><p>No hay presupuestos todavía</p></div>`;
+
+  return `
+  <div class="page-header">
+    <div>
+      <div class="page-title">Presupuestos</div>
+      <div class="page-sub">${ps.length} presupuesto${ps.length!==1?'s':''}</div>
+    </div>
+    <button class="btn-primary" onclick="showModalNuevoPresupuesto()">+ Nuevo presupuesto</button>
+  </div>
+  <div class="card-grid">${cards}</div>`;
+}
+
+// ============================================================
+// DETALLE PRESUPUESTO
+// ============================================================
+function renderDetalle() {
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (!p) return '<p>No encontrado</p>';
+  const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
+  const tab = state._tab || 'aberturas';
+
+  const costoP = abs.reduce((s, a) => s + Number(a.costo_perfiles || 0), 0);
+  const costoV = abs.reduce((s, a) => s + Number(a.costo_vidrios || 0), 0);
+  const costoH = abs.reduce((s, a) => s + Number(a.costo_herrajes || 0), 0);
+  const subtotal = costoP + costoV + costoH;
+  const markup = Number(p.markup || 0);
+  const totalFinal = subtotal * (1 + markup / 100);
+
+  const estadoOpts = ESTADOS.map(e => `<option value="${e.id}" ${p.estado===e.id?'selected':''}>${e.label}</option>`).join('');
+
+  let tabContent = '';
+  if (tab === 'aberturas') {
+    const abCards = abs.map((a, idx) => {
+      const cTotal = Number(a.costo_perfiles||0)+Number(a.costo_vidrios||0)+Number(a.costo_herrajes||0);
+      return `
+      <div class="ab-card">
+        <div style="flex:1">
+          <div class="ab-nombre">${a.nombre}</div>
+          <div class="ab-meta">${a.ancho}x${a.alto} mm · ${a.cantidad} u. · ${a.linea}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="ab-costo">${fmt(cTotal * Number(a.cantidad))}</div>
+          <button class="btn-danger" style="margin-top:6px" onclick="eliminarAbertura('${a.id}')">✕ Eliminar</button>
+        </div>
+      </div>`;
+    }).join('');
+    tabContent = `
+      ${abCards}
+      <div id="addAbWrap"></div>
+      <button class="btn-add-ab" onclick="showAddAbertura()">+ Agregar abertura</button>`;
+  }
+
+  if (tab === 'calculo') {
+    // Consolidar materiales — robusto ante datos del Sheet
+    const consolidado = {};
+    for (const a of abs) {
+      const opts = Array.isArray(a.optimizacion) ? a.optimizacion : [];
+      for (const opt of opts) {
+        const perfil = opt.perfil || {};
+        const k = perfil.id || perfil.codigo || opt.perfil_id || opt.perfil_nombre || 'desconocido';
+        const nombre = perfil.nombre || perfil.codigo || opt.perfil_nombre || k;
+        const codigo = perfil.codigo || '';
+        const cantBarras = Number(opt.cantBarras || opt.cant_barras || 0);
+        const costo = Number(opt.costo || 0);
+        const costoPorBarra = cantBarras > 0 ? costo / cantBarras : 0;
+        const largoBarra = Number(perfil.largo_barra || 6000);
+        const barras = opt.barras || [];
+        if (!consolidado[k]) consolidado[k] = { nombre, codigo, barras: 0, costo: 0, costoPorBarra, largoBarra, detalleBarras: [] };
+        consolidado[k].barras += cantBarras;
+        consolidado[k].costo += costo;
+        if (!consolidado[k].costoPorBarra && costoPorBarra) consolidado[k].costoPorBarra = costoPorBarra;
+        // Acumular detalle de barras para mostrar cortes
+        barras.forEach((b, bi) => {
+          consolidado[k].detalleBarras.push({ barra: consolidado[k].detalleBarras.length + 1, piezas: b.piezas || [], resto: b.resto, abertura: a.nombre });
+        });
+      }
+    }
+
+    const tieneConsolidado = Object.keys(consolidado).length > 0;
+
+    const matRows = tieneConsolidado
+      ? Object.entries(consolidado).map(([k, m]) => {
+          // Detalle de barras expandible
+          const rowId = 'mr_' + k.replace(/[^a-zA-Z0-9]/g, '_');
+          const barrasHtml = m.detalleBarras.map(b => {
+            const piezasHtml = (b.piezas || []).map(pz =>
+              '<span style="display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 7px;font-size:11px;font-family:\'DM Mono\',monospace;margin:2px;">'
+              + pz.largo + 'mm'
+              + (pz.desc ? '<span style="color:var(--text3);font-size:10px;margin-left:4px;">'+pz.desc+'</span>' : '')
+              + '</span>'
+            ).join('');
+            const usadoMm = m.largoBarra - (b.resto || 0);
+            const pct = Math.round((usadoMm / m.largoBarra) * 100);
+            const colorBarra = pct > 90 ? 'var(--accent)' : pct > 70 ? '#FFB830' : '#FF4D6A';
+            return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-top:6px;">'
+              + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+                + '<span style="font-size:11px;font-weight:700;color:var(--text3)">BARRA ' + b.barra + '</span>'
+                + '<span style="font-size:11px;font-family:\'DM Mono\',monospace;color:'+colorBarra+'">'
+                  + usadoMm + '/' + m.largoBarra + 'mm · resto: ' + (b.resto||0) + 'mm · ' + pct + '%'
+                + '</span>'
+              + '</div>'
+              // Barra visual
+              + '<div style="height:8px;background:var(--border);border-radius:4px;margin-bottom:8px;overflow:hidden;">'
+                + '<div style="height:100%;width:'+pct+'%;background:'+colorBarra+';border-radius:4px;transition:width 0.3s;"></div>'
+              + '</div>'
+              + piezasHtml
+              + '<div style="font-size:10px;color:var(--text3);margin-top:4px;">← '+b.abertura+'</div>'
+            + '</div>';
+          }).join('');
+
+          return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;">'
+            + '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleMatRow(\''+rowId+'\')">'
+              + '<div style="display:flex;align-items:center;gap:10px;">'
+                + (m.codigo ? '<span style="font-family:\'DM Mono\',monospace;color:var(--accent);font-size:12px;background:var(--accent)11;padding:2px 8px;border-radius:4px;">['+m.codigo+']</span>' : '')
+                + '<span style="font-weight:600;color:var(--text)">' + m.nombre + '</span>'
+              + '</div>'
+              + '<div style="display:flex;align-items:center;gap:16px;">'
+                + '<span class="mat-badge">' + m.barras + ' barra' + (m.barras!==1?'s':'') + '</span>'
+                + '<span style="font-family:\'DM Mono\',monospace;color:var(--accent);font-weight:700;">' + fmt(m.costo) + '</span>'
+                + '<span style="color:var(--text3);font-size:12px;">▼</span>'
+              + '</div>'
+            + '</div>'
+            + '<div id="'+rowId+'" style="display:none;">' + barrasHtml + '</div>'
+          + '</div>';
+        }).join('')
+      : '<div style="color:var(--text3);padding:24px;text-align:center;border:1px dashed var(--border2);border-radius:8px">Sin datos de materiales. Agregá aberturas al presupuesto primero.</div>';
+
+    const detalle = abs.map(a => {
+      const opts = Array.isArray(a.optimizacion) ? a.optimizacion : [];
+      const filas = opts.map(opt => {
+        const perfil = opt.perfil || {};
+        const nombre = perfil.nombre || perfil.codigo || opt.perfil_nombre || '-';
+        const codigo = perfil.codigo || '';
+        const cantBarras = Number(opt.cantBarras || opt.cant_barras || 0);
+        return '<div class="preview-row">'
+          + '<span>' + (codigo ? '['+codigo+'] ' : '') + nombre + '</span>'
+          + '<span style="color:var(--text3)">' + cantBarras + ' barra' + (cantBarras!==1?'s':'') + '</span>'
+          + '<span>' + fmt(Number(opt.costo||0)) + '</span>'
+          + '</div>';
+      }).join('');
+      const vidrioFilas = (tryParse(a.vidrios, []) || []).map(v =>
+        '<div class="preview-row">'
+        + '<span>' + v.desc + ' (' + v.ancho + 'x' + v.alto + 'mm)</span>'
+        + '<span style="color:var(--text3)">' + ((v.ancho/1000)*(v.alto/1000)).toFixed(2) + ' m²</span>'
+        + '<span>' + fmt((v.ancho/1000)*(v.alto/1000)*Number(a.precio_vidrio||8500)) + '</span>'
+        + '</div>'
+      ).join('');
+      const vidrios = tryParse(a.vidrios, []) || [];
+      const sinDatos = !opts.length && !vidrios.length;
+      return '<div style="margin-bottom:18px">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--text3);background:var(--bg);padding:8px 12px;border-radius:7px;margin-bottom:6px">'
+          + a.nombre + ' — ' + a.ancho + 'x' + a.alto + 'mm x ' + a.cantidad + ' u.'
+        + '</div>'
+        + (sinDatos ? '<div style="color:var(--text3);font-size:12px;padding:6px 12px">Sin detalle guardado</div>' : filas + vidrioFilas)
+        + '</div>';
+    }).join('');
+
+    tabContent = `
+      <h3 style="font-size:14px;font-weight:700;color:var(--text2);margin-bottom:14px;text-transform:uppercase;letter-spacing:0.05em">Materiales consolidados — click para ver cortes por barra</h3>
+      ${matRows}
+      <h3 style="font-size:14px;font-weight:700;color:var(--text2);margin:24px 0 14px;text-transform:uppercase;letter-spacing:0.05em">Detalle por abertura</h3>
+      ${detalle || '<p style="color:var(--text3)">Sin aberturas</p>'}`;
+  }
+
+  if (tab === 'resumen') {
+    tabContent = `
+      <div style="max-width:480px">
+        <div class="card">
+          <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:18px">Resumen de costos</div>
+          <div class="resumen-row"><span>Perfiles de aluminio</span><span style="font-family:'DM Mono',monospace">${fmt(costoP)}</span></div>
+          <div class="resumen-row"><span>Vidrios</span><span style="font-family:'DM Mono',monospace">${fmt(costoV)}</span></div>
+          <div class="resumen-row"><span>Herrajes</span><span style="font-family:'DM Mono',monospace">${fmt(costoH)}</span></div>
+          <div class="resumen-row" style="font-weight:700;border-top:1px solid var(--border2);margin-top:8px;padding-top:14px">
+            <span>Subtotal materiales</span><span style="font-family:'DM Mono',monospace">${fmt(subtotal)}</span>
+          </div>
+          <div style="margin-top:18px;display:flex;align-items:center;gap:16px">
+            <label style="white-space:nowrap">Markup / Ganancia (%)</label>
+            <input type="number" id="markupInput" value="${markup}" min="0" style="width:100px" onchange="actualizarMarkup(this.value)">
+          </div>
+          <div class="total-final">
+            <span>TOTAL FINAL</span>
+            <span>${fmt(totalFinal)}</span>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  return `
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+    <button class="back-btn" onclick="navigate('presupuestos')">← Volver</button>
+  </div>
+  <div class="detail-header">
+    <div>
+      <div class="detail-cliente">${p.cliente}</div>
+      <div class="detail-obra">${p.obra} · <span style="font-family:'DM Mono',monospace">${p.fecha}</span></div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        <span class="badge" style="background:#8B5CF622;color:#A78BFA">${p.linea || 'Modena'}</span>
+        <span class="badge" style="background:${p.tipo_al==='recuperado'?'#FFB83022':'#00E5A022'};color:${p.tipo_al==='recuperado'?'#FFB830':'var(--accent)'}">${p.tipo_al || 'nuevo'}</span>
+        <span class="badge" style="background:#2B8EFF22;color:#2B8EFF">${p.color_al || '-'}</span>
+        <span class="badge" style="background:#FFB83022;color:#FFB830;font-family:'DM Mono',monospace">${fmt(p.precio_kg || 0)}/kg</span>
+      </div>
+    </div>
+    <div class="detail-actions">
+      ${estadoBadge(p.estado)}
+      <select style="width:auto" onchange="cambiarEstado(this.value)">${estadoOpts}</select>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab ${tab==='aberturas'?'active':''}" onclick="setTab('aberturas')">Aberturas</button>
+    <button class="tab ${tab==='calculo'?'active':''}" onclick="setTab('calculo')">Materiales</button>
+    <button class="tab ${tab==='resumen'?'active':''}" onclick="setTab('resumen')">Resumen</button>
+  </div>
+  ${tabContent}`;
+}
+
+// ============================================================
+// KANBAN
+// ============================================================
+function renderKanban() {
+  const aprobados = state.presupuestos.filter(p => p.estado === 'aprobado' || p.kanban_col);
+  const cols = KANBAN_COLS.map(col => {
+    const cards = aprobados.filter(p => (p.kanban_col || 'pendiente') === col.id);
+    const cardHtml = cards.map(p => {
+      const siguientes = KANBAN_COLS.filter(c => c.id !== col.id).map(c =>
+        `<button onclick="moverKanban('${p.id}','${c.id}')">${c.label}</button>`).join('');
+      return `
+      <div class="kanban-card">
+        <div class="kanban-card-cliente">${p.cliente}</div>
+        <div class="kanban-card-obra">${p.obra}</div>
+        <div class="kanban-card-total">${fmt(p.total_final)}</div>
+        <div class="kanban-move">${siguientes}</div>
+      </div>`;
+    }).join('') || '';
+    return `
+    <div class="kanban-col">
+      <div class="kanban-col-title" style="color:${col.color}">
+        ${col.label} <span class="kanban-count">${cards.length}</span>
+      </div>
+      ${cardHtml}
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="page-header">
+    <div>
+      <div class="page-title">Kanban de Obras</div>
+      <div class="page-sub">Presupuestos aprobados en seguimiento</div>
+    </div>
+  </div>
+  <div class="kanban-board">${cols}</div>`;
+}
+
+// ============================================================
+// STOCK
+// ============================================================
+function renderStock() {
+  const rows = state.stock.map(s => `
+    <div class="stock-row">
+      <div style="font-size:14px;font-weight:500">${s.perfil_nombre}</div>
+      <div style="font-size:13px;color:var(--text3)">${s.linea}</div>
+      <div style="font-family:'DM Mono',monospace;color:var(--accent)">${Number(s.largo_mm).toLocaleString()} mm</div>
+      <button class="btn-danger" onclick="eliminarStock('${s.id}')">✕</button>
+    </div>`).join('') || '<div class="empty"><div class="empty-icon">📦</div><p>No hay sobrantes registrados</p></div>';
+
+  return `
+  <div class="page-header">
+    <div>
+      <div class="page-title">Stock de Sobrantes</div>
+      <div class="page-sub">${state.stock.length} registro${state.stock.length!==1?'s':''}</div>
+    </div>
+    <button class="btn-primary" onclick="showModalStock()">+ Agregar sobrante</button>
+  </div>
+  ${rows}`;
+}
+
+// ============================================================
+// CONFIG
+// ============================================================
+function renderConfig() {
+  const lineasRows = state.lineas.map(l => `
+    <tr>
+      <td style="font-weight:600;color:var(--text)">${l.nombre}</td>
+      <td><button class="btn-danger" onclick="eliminarLinea('${l.id}')">Eliminar</button></td>
+    </tr>`).join('');
+
+  const perfilesRows = state.perfiles.map(p => {
+    const linea = state.lineas.find(l => l.id === p.linea_id);
+    return `
+    <tr>
+      <td style="font-family:'DM Mono',monospace;color:var(--accent)">${p.codigo || '-'}</td>
+      <td style="color:var(--text)">${p.nombre}</td>
+      <td>${linea?.nombre || p.linea_id}</td>
+      <td style="font-family:'DM Mono',monospace">${Number(p.largo_barra).toLocaleString()} mm</td>
+      <td style="font-family:'DM Mono',monospace">${p.peso_tira} kg</td>
+      <td><button class="btn-danger" onclick="eliminarPerfil('${p.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  const herrajesRows = state.herrajes.map(h => {
+    const linea = state.lineas.find(l => l.id === h.linea_id);
+    return `
+    <tr>
+      <td style="color:var(--text)">${h.nombre}</td>
+      <td>${linea?.nombre || h.linea_id}</td>
+      <td style="font-family:'DM Mono',monospace">${fmt(h.precio)} / ${h.unidad}</td>
+      <td><button class="btn-danger" onclick="eliminarHerraje('${h.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  const preciosRows = state.precios_kg.map(pk => {
+    const linea = state.lineas.find(l => l.id === pk.linea_id);
+    return `
+    <tr>
+      <td style="color:var(--text)">${pk.nombre}</td>
+      <td>${linea?.nombre || pk.linea_id || '-'}</td>
+      <td><span class="badge" style="background:${pk.tipo==='nuevo'?'#00E5A022':'#FFB83022'};color:${pk.tipo==='nuevo'?'var(--accent)':'#FFB830'}">${pk.tipo}</span></td>
+      <td style="font-family:'DM Mono',monospace">${fmt(pk.precio_kg)}/kg</td>
+      <td><button class="btn-danger" onclick="editarPrecioKg('${pk.id}')">Editar</button></td>
+    </tr>`;
+  }).join('');
+
+  // Tipologías configurables por línea
+  const configTab = state._configTab || 'precios';
+  const lineaActiva = state._configLinea || (state.lineas[0]?.id || 'modena');
+  const lineaTabs = state.lineas.map(l =>
+    '<button class="tab '+(lineaActiva===l.id?'active':'')+'" onclick="setConfigLinea(\''+l.id+'\')" style="font-size:12px;padding:8px 14px;">'+l.nombre+'</button>'
+  ).join('');
+
+  const tiposDeLinea = TIPOS_ABERTURA[lineaActiva] || [];
+  const tipoActivo = state._configTipo || tiposDeLinea[0]?.id || '';
+  const tipoTabs = tiposDeLinea.map(t =>
+    '<button class="tab '+(tipoActivo===t.id?'active':'')+'" onclick="setConfigTipo(\''+t.id+'\')" style="font-size:12px;padding:8px 14px;">'+t.nombre+'</button>'
+  ).join('');
+
+  const cfg = getConfigTipo(lineaActiva, tipoActivo);
+  const perfilesConfigRows = cfg ? cfg.perfiles.map((pf, idx) => {
+    const condColor = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF' : '#A855F7') : 'var(--text3)';
+    const condBg    = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF22' : '#A855F722') : 'transparent';
+    return `
+    <tr style="${pf.solo_si_n ? 'background:'+condBg+';' : ''}">
+      <td style="color:var(--text);font-size:13px;">
+        ${pf.solo_si_n ? '<span style="font-size:10px;font-weight:700;color:'+condColor+';margin-right:6px;border:1px solid '+condColor+';padding:1px 5px;border-radius:3px;">N='+pf.solo_si_n+'</span>' : ''}
+        ${pf.rol}
+      </td>
+      <td><input value="${pf.codigo}" style="width:80px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'codigo',this.value)"></td>
+      <td><input value="${pf.cantidad}" style="width:70px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'cantidad',this.value)"></td>
+      <td><input value="${pf.formula_largo}" style="width:180px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'formula_largo',this.value)"></td>
+      <td>
+        <select style="width:70px;font-size:12px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'solo_si_n',this.value)">
+          <option value="" ${!pf.solo_si_n?'selected':''}>Siempre</option>
+          <option value="2" ${pf.solo_si_n==='2'?'selected':''}>N = 2</option>
+          <option value="3" ${pf.solo_si_n==='3'?'selected':''}>N = 3</option>
+          <option value="4" ${pf.solo_si_n==='4'?'selected':''}>N = 4</option>
+        </select>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="5" style="color:var(--text3);padding:16px;">Sin configuracion para esta tipologia</td></tr>';
+
+  const vidrioConfig = cfg ? `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
+      <div class="form-group" style="flex:1;min-width:180px;">
+        <label>Formula ancho vidrio</label>
+        <input value="${cfg.vidrio.formula_ancho}" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_ancho',this.value)">
+      </div>
+      <div class="form-group" style="flex:1;min-width:180px;">
+        <label>Formula alto vidrio</label>
+        <input value="${cfg.vidrio.formula_alto}" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_alto',this.value)">
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;">Variables disponibles: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">W</code> ancho vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">H</code> alto vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">N</code> cantidad de hojas</div>
+  ` : '';
+
+  return `
+  <div class="page-header">
+    <div><div class="page-title">Configuracion</div></div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-title">Precios por kg de aluminio</div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Color</th><th>Linea</th><th>Tipo</th><th>Precio/kg</th><th></th></tr></thead>
+      <tbody>${preciosRows}</tbody></table>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-title">Lineas de abertura</div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Nombre</th><th>Acciones</th></tr></thead>
+      <tbody>${lineasRows}</tbody></table>
+    </div>
+    <button class="btn-secondary" style="margin-top:12px" onclick="showModalLinea()">+ Nueva línea</button>
+  </div>
+
+  <div class="config-section">
+    <div class="config-title">Perfiles</div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Codigo</th><th>Nombre</th><th>Linea</th><th>Largo barra</th><th>Peso/tira (kg)</th><th></th></tr></thead>
+      <tbody>${perfilesRows}</tbody></table>
+    </div>
+    <button class="btn-secondary" style="margin-top:12px" onclick="showModalPerfil()">+ Nuevo perfil</button>
+  </div>
+
+  <div class="config-section">
+    <div class="config-title">Herrajes y accesorios</div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Nombre</th><th>Linea</th><th>Precio</th><th></th></tr></thead>
+      <tbody>${herrajesRows}</tbody></table>
+    </div>
+    <button class="btn-secondary" style="margin-top:12px" onclick="showModalHerraje()">+ Nuevo herraje</button>
+  </div>
+
+  <div class="config-section">
+    <div class="config-title" style="margin-bottom:16px;">Formulas de corte por tipologia</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:16px;">Editá las holguras, codigos de perfil y formulas de vidrio para cada tipo de abertura. Los cambios se aplican a los nuevos presupuestos.</div>
+
+    <div style="margin-bottom:4px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Linea</div>
+    <div class="tabs" style="margin-bottom:16px;">${lineaTabs}</div>
+
+    <div style="margin-bottom:4px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Tipo de abertura</div>
+    <div class="tabs" style="margin-bottom:16px;">${tipoTabs}</div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Rol del perfil</th><th>Codigo</th><th>Cantidad</th><th>Formula largo (mm)</th><th>Solo si N=</th></tr></thead>
+        <tbody>${perfilesConfigRows}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--text3);">En Cantidad: usar <code style="background:var(--bg);padding:2px 5px;border-radius:3px;">N</code> para hojas, <code style="background:var(--bg);padding:2px 5px;border-radius:3px;">N*2</code> para doble, etc.</div>
+
+    <div style="margin-top:20px;font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;">Vidrio</div>
+    ${vidrioConfig}
+
+    <button class="btn-secondary" style="margin-top:16px;" onclick="resetConfigTipo('${lineaActiva}','${tipoActivo}')">↺ Restaurar valores por defecto</button>
+  </div>`;
+}
+
+// ============================================================
+// EVENTS / ACTIONS
+// ============================================================
+function toggleMatRow(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function setConfigLinea(linea_id) {
+  state._configLinea = linea_id;
+  const tipos = TIPOS_ABERTURA[linea_id] || [];
+  state._configTipo = tipos[0]?.id || '';
+  render();
+}
+
+function setConfigTipo(tipo_id) {
+  state._configTipo = tipo_id;
+  render();
+}
+
+function _ensureConfigTipo(linea_id, tipo_id) {
+  if (!state.config_tipologias[linea_id]) state.config_tipologias[linea_id] = {};
+  if (!state.config_tipologias[linea_id][tipo_id]) {
+    const def = CONFIG_TIPOLOGIAS_DEFAULT[linea_id]?.[tipo_id];
+    state.config_tipologias[linea_id][tipo_id] = def
+      ? { perfiles: def.perfiles.map(p => ({...p})), vidrio: {...def.vidrio} }
+      : { perfiles: [], vidrio: { formula_ancho: '', formula_alto: '' } };
+  }
+  return state.config_tipologias[linea_id][tipo_id];
+}
+
+// Guarda config de una tipología en la pestaña Config del Sheet
+async function saveConfigTipo(linea_id, tipo_id) {
+  const cfg = state.config_tipologias?.[linea_id]?.[tipo_id];
+  if (!cfg) return;
+  const key = 'tipologia_' + linea_id + '__' + tipo_id;
+  const value = JSON.stringify(cfg);
+  // Buscar si ya existe una fila con esta key
+  const existing = await sheetsGet(SHEETS.config);
+  const row = existing.find(r => r.key === key);
+  if (row) {
+    await sheetsUpdateRow(SHEETS.config, row.id, { key, value });
+  } else {
+    await sheetsAppend(SHEETS.config, { id: genId(), key, value });
+  }
+}
+
+function updateConfigPerfil(linea_id, tipo_id, idx, campo, valor) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  if (cfg.perfiles[idx]) cfg.perfiles[idx][campo] = valor;
+  saveConfigTipo(linea_id, tipo_id);
+  toast('Guardado');
+}
+
+function updateConfigVidrio(linea_id, tipo_id, campo, valor) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  cfg.vidrio[campo] = valor;
+  saveConfigTipo(linea_id, tipo_id);
+  toast('Guardado');
+}
+
+async function resetConfigTipo(linea_id, tipo_id) {
+  if (!state.config_tipologias[linea_id]) state.config_tipologias[linea_id] = {};
+  delete state.config_tipologias[linea_id][tipo_id];
+  // Borrar del Sheet
+  const key = 'tipologia_' + linea_id + '__' + tipo_id;
+  const existing = await sheetsGet(SHEETS.config);
+  const row = existing.find(r => r.key === key);
+  if (row) await sheetsDeleteRow(SHEETS.config, row.id);
+  toast('Restaurado a valores por defecto');
+  render();
+}
+
+function setTab(tab) { state._tab = tab; render(); }
+
+async function cambiarEstado(nuevoEstado) {
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (!p) return;
+  p.estado = nuevoEstado;
+  if (nuevoEstado === 'aprobado' && !p.kanban_col) p.kanban_col = 'pendiente';
+  await sheetsUpdateRow(SHEETS.presupuestos, p.id, { estado: nuevoEstado, kanban_col: p.kanban_col || '' });
+  toast('Estado actualizado');
+  render();
+}
+
+async function actualizarMarkup(val) {
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (!p) return;
+  const mk = parseFloat(val) || 0;
+  const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
+  const sub = abs.reduce((s, a) => s + Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0), 0);
+  const total = sub * (1 + mk / 100);
+  p.markup = mk; p.total_final = total;
+  await sheetsUpdateRow(SHEETS.presupuestos, p.id, { markup: mk, total_final: total });
+  render();
+}
+
+async function moverKanban(id, col) {
+  const p = state.presupuestos.find(x => x.id === id);
+  if (!p) return;
+  p.kanban_col = col;
+  await sheetsUpdateRow(SHEETS.presupuestos, id, { kanban_col: col });
+  toast('Movido a ' + KANBAN_COLS.find(c => c.id === col)?.label);
+  render();
+}
+
+async function eliminarAbertura(id) {
+  if (!confirm('¿Eliminar esta abertura? Los costos del presupuesto se recalcularán.')) return;
+
+  // Eliminar del state y Sheet
+  state.aberturas = state.aberturas.filter(a => a.id !== id);
+  await sheetsDeleteRow(SHEETS.aberturas, id);
+
+  // Recalcular bin packing completo para las aberturas restantes
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (p) {
+    const precioKg = getPrecioKgPresupuesto(p);
+    const absRestantes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+
+    // Recalcular cada abertura en orden, acumulando barras
+    let barrasAcumuladas = {};
+    for (const a of absRestantes) {
+      const params = tryParse(a.params, {});
+      const res = calcularAbertura(
+        a.linea_id, a.tipo_id,
+        Number(a.ancho), Number(a.alto),
+        params, state.perfiles, state.herrajes,
+        Number(a.precio_vidrio || 8500), precioKg,
+        barrasAcumuladas
+      );
+      if (!res) continue;
+
+      // Actualizar costos en state
+      a.costo_perfiles = res.costoPerfiles;
+      a.costo_vidrios  = res.costoVidrios;
+      a.costo_herrajes = res.costoHerrajes;
+      a.optimizacion   = JSON.stringify(res.optimizacion);
+      a.vidrios        = JSON.stringify(res.vidrios);
+
+      // Actualizar en Sheet
+      await sheetsUpdateRow(SHEETS.aberturas, a.id, {
+        costo_perfiles: res.costoPerfiles,
+        costo_vidrios:  res.costoVidrios,
+        costo_herrajes: res.costoHerrajes,
+        optimizacion:   JSON.stringify(res.optimizacion),
+        vidrios:        JSON.stringify(res.vidrios),
+      });
+
+      // Acumular barras para la siguiente
+      barrasAcumuladas = res.barrasFinales;
+    }
+  }
+
+  await recalcularTotal();
+  toast('Abertura eliminada — costos recalculados');
+  render();
+}
+
+async function recalcularTotal() {
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (!p) return;
+  const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
+  const sub = abs.reduce((s, a) => s + Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0), 0);
+  const total = sub * (1 + Number(p.markup||0) / 100);
+  p.total_final = total;
+  await sheetsUpdateRow(SHEETS.presupuestos, p.id, { total_final: total });
+}
+
+async function eliminarStock(id) {
+  if (!confirm('¿Eliminar este sobrante?')) return;
+  state.stock = state.stock.filter(s => s.id !== id);
+  await sheetsDeleteRow(SHEETS.stock, id);
+  toast('Sobrante eliminado');
+  render();
+}
+
+async function eliminarLinea(id) {
+  if (!confirm('¿Eliminar esta línea?')) return;
+  state.lineas = state.lineas.filter(l => l.id !== id);
+  await sheetsDeleteRow(SHEETS.lineas, id);
+  toast('Linea eliminada'); render();
+}
+async function eliminarPerfil(id) {
+  if (!confirm('¿Eliminar este perfil?')) return;
+  state.perfiles = state.perfiles.filter(p => p.id !== id);
+  await sheetsDeleteRow(SHEETS.perfiles, id);
+  toast('Perfil eliminado'); render();
+}
+async function eliminarHerraje(id) {
+  if (!confirm('¿Eliminar este herraje?')) return;
+  state.herrajes = state.herrajes.filter(h => h.id !== id);
+  await sheetsDeleteRow(SHEETS.herrajes, id);
+  toast('Herraje eliminado'); render();
+}
+
+// ============================================================
+// MODALS
+// ============================================================
+function showModal(html) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = 'modalOverlay';
+  ov.innerHTML = `<div class="modal">${html}</div>`;
+  ov.addEventListener('click', e => { if (e.target === ov) closeModal(); });
+  document.body.appendChild(ov);
+}
+function closeModal() { document.getElementById('modalOverlay')?.remove(); }
+
+function showModalNuevoPresupuesto() {
+  const lineaOpts = state.lineas.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+  showModal(`
+    <div class="modal-title">Nuevo Presupuesto</div>
+    <div class="form-group"><label>Cliente</label><input id="m_cliente" placeholder="Nombre del cliente"></div>
+    <div class="form-group"><label>Obra / Descripcion</label><input id="m_obra" placeholder="Ej: Casa Martínez - Dormitorio"></div>
+    <div class="form-group">
+      <label>Linea de aluminio</label>
+      <select id="m_linea_ppto" onchange="updateTiposYPrecios()">${lineaOpts}</select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Tipo de aluminio</label>
+        <select id="m_tipo_al" onchange="updatePrecioKg()">
+          <option value="nuevo">Nuevo</option>
+          <option value="recuperado">Recuperado</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Color</label>
+        <select id="m_color_al" onchange="updatePrecioKg()"></select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Precio por kg ($/kg)</label>
+      <input type="number" id="m_precio_kg" placeholder="Se completa automáticamente" style="font-family:'DM Mono',monospace">
+    </div>
+    <div class="form-group"><label>Fecha</label><input id="m_fecha" value="${today()}"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="crearPresupuesto()">Crear →</button>
+    </div>`);
+  updateTiposYPrecios();
+}
+
+function updateTiposYPrecios() {
+  const linea_id = document.getElementById('m_linea_ppto')?.value;
+  const tipo = document.getElementById('m_tipo_al')?.value || 'nuevo';
+  const preciosFiltrados = state.precios_kg.filter(p => p.linea_id === linea_id && p.tipo === tipo);
+  const colores = [...new Set(preciosFiltrados.map(p => p.nombre))];
+  const colorSel = document.getElementById('m_color_al');
+  if (colorSel) {
+    colorSel.innerHTML = colores.map(c => `<option value="${c}">${c}</option>`).join('');
+  }
+  updatePrecioKg();
+}
+
+function updatePrecioKg() {
+  const linea_id = document.getElementById('m_linea_ppto')?.value;
+  const tipo  = document.getElementById('m_tipo_al')?.value;
+  const color = document.getElementById('m_color_al')?.value;
+  const match = state.precios_kg.find(p => p.linea_id === linea_id && p.tipo === tipo && p.nombre === color);
+  const input = document.getElementById('m_precio_kg');
+  if (input && match) input.value = match.precio_kg;
+}
+
+async function crearPresupuesto() {
+  const cliente   = document.getElementById('m_cliente')?.value?.trim();
+  const obra      = document.getElementById('m_obra')?.value?.trim();
+  const fecha     = document.getElementById('m_fecha')?.value;
+  const linea_id  = document.getElementById('m_linea_ppto')?.value || 'modena';
+  const tipo_al   = document.getElementById('m_tipo_al')?.value || 'nuevo';
+  const color_al  = document.getElementById('m_color_al')?.value || 'Blanco';
+  const precio_kg = parseFloat(document.getElementById('m_precio_kg')?.value) || 0;
+  const linea     = state.lineas.find(l => l.id === linea_id);
+  if (!cliente || !obra) { toast('Completá cliente y obra', 'error'); return; }
+  const p = { id: genId(), cliente, obra, fecha, estado: 'generado', markup: 30, total_final: 0, kanban_col: '', linea_id, linea: linea?.nombre || linea_id, tipo_al, color_al, precio_kg };
+  state.presupuestos.unshift(p);
+  await sheetsAppend(SHEETS.presupuestos, p);
+  closeModal();
+  state.presupuestoActivo = p.id;
+  state._tab = 'aberturas';
+  toast('Presupuesto creado');
+  render();
+}
+
+function showAddAbertura() {
+  const lineaOpts = state.lineas.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+  showModal(`
+    <div class="modal-title">Agregar Abertura</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Linea</label>
+        <select id="m_linea" onchange="updateTipos()">${lineaOpts}</select>
+      </div>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="m_tipo" onchange="updateParams()"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Ancho vano (mm)</label><input type="number" id="m_ancho" placeholder="1200" oninput="previewCalc()"></div>
+      <div class="form-group"><label>Alto vano (mm)</label><input type="number" id="m_alto" placeholder="1000" oninput="previewCalc()"></div>
+      <div class="form-group"><label>Cantidad</label><input type="number" id="m_cant" value="1" min="1" oninput="previewCalc()"></div>
+    </div>
+    <div id="m_params"></div>
+    <div class="form-group"><label>Precio vidrio ($/m²)</label><input type="number" id="m_pvid" value="8500" oninput="previewCalc()"></div>
+    <div id="m_preview"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" id="btnAgregarAb" onclick="confirmarAgregarAbertura()" disabled>Agregar</button>
+    </div>`);
+  updateTipos();
+}
+
+function updateTipos() {
+  const linea = document.getElementById('m_linea')?.value;
+  const tipos = TIPOS_ABERTURA[linea] || [];
+  const sel = document.getElementById('m_tipo');
+  if (!sel) return;
+  sel.innerHTML = tipos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
+  updateParams();
+}
+
+function updateParams() {
+  const linea = document.getElementById('m_linea')?.value;
+  const tipoId = document.getElementById('m_tipo')?.value;
+  const tipos = TIPOS_ABERTURA[linea] || [];
+  const tipo = tipos.find(t => t.id === tipoId);
+  const wrap = document.getElementById('m_params');
+  if (!wrap || !tipo) return;
+  wrap.innerHTML = (tipo.params || []).map(p => `
+    <div class="form-group">
+      <label>${p.nombre}</label>
+      <input type="number" id="param_${p.id}" value="${p.default}" min="${p.min}" max="${p.max}" style="width:100px" oninput="previewCalc()">
+    </div>`).join('');
+  previewCalc();
+}
+
+function getPrecioKgPresupuesto(p) {
+  let precioKg = Number(p?.precio_kg) || 0;
+  if (!precioKg && p) {
+    const match = state.precios_kg.find(pk =>
+      pk.linea_id === p.linea_id &&
+      pk.tipo === p.tipo_al &&
+      pk.nombre === p.color_al
+    );
+    precioKg = Number(match?.precio_kg) || 0;
+  }
+  return precioKg;
+}
+
+function previewCalc() {
+  const linea  = document.getElementById('m_linea')?.value;
+  const tipoId = document.getElementById('m_tipo')?.value;
+  const W      = parseInt(document.getElementById('m_ancho')?.value);
+  const H      = parseInt(document.getElementById('m_alto')?.value);
+  const cant   = parseInt(document.getElementById('m_cant')?.value) || 1;
+  const pVid   = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
+  const preview = document.getElementById('m_preview');
+  const btnAb   = document.getElementById('btnAgregarAb');
+  if (!preview) return;
+  if (!W || !H || !linea || !tipoId) { preview.innerHTML = ''; if (btnAb) btnAb.disabled = true; return; }
+
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  const precioKg = getPrecioKgPresupuesto(p);
+
+  // Obtener barras existentes del presupuesto actual
+  const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+  const barrasExistentes = getBarrasExistentes(absExistentes, state.perfiles);
+
+  const tipos = TIPOS_ABERTURA[linea] || [];
+  const tipo  = tipos.find(t => t.id === tipoId);
+  if (!tipo) return;
+
+  const params = {};
+  (tipo.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
+
+  const res = calcularAbertura(linea, tipoId, W, H, params, state.perfiles, state.herrajes, pVid, precioKg, barrasExistentes);
+  if (!res) return;
+
+  const hayAhorro = res.optimizacion.some(o => o.esAhorro || o.cantBarras < (o.cantBarrasTotal - o.barrasAnteriores));
+
+  const filas = res.optimizacion.map(o => {
+    const barrasNuevas = o.cantBarras;
+    const esAhorro = barrasNuevas === 0;
+    const colorCosto = esAhorro ? '#00E5A0' : 'var(--text)';
+    const iconoAhorro = esAhorro ? '<span style="color:#00E5A0;font-size:10px;margin-left:6px;">✓ aprovecha sobrante</span>' : '';
+    return `<div class="preview-row">
+      <span>${o.perfil.codigo ? '['+o.perfil.codigo+'] ' : ''}${o.perfil.nombre}${iconoAhorro}</span>
+      <span style="color:var(--text3)">${barrasNuevas} tira${barrasNuevas!==1?'s':''} nueva${barrasNuevas!==1?'s':''} × ${o.pesoTira}kg = ${(barrasNuevas*o.pesoTira).toFixed(2)}kg</span>
+      <span style="color:${colorCosto}">${fmt(o.costo)}</span>
+    </div>`;
+  }).join('');
+
+  const vidFilas = res.vidrios.map(v => `
+    <div class="preview-row">
+      <span>${v.desc} (${v.ancho}x${v.alto}mm)</span>
+      <span style="color:var(--text3)">${((v.ancho/1000)*(v.alto/1000)).toFixed(2)}m²</span>
+      <span>${fmt((v.ancho/1000)*(v.alto/1000)*pVid)}</span>
+    </div>`).join('');
+
+  const total = (res.costoPerfiles + res.costoVidrios + res.costoHerrajes) * cant;
+  const ahorroHtml = hayAhorro
+    ? `<div style="font-size:11px;color:#00E5A0;margin-top:6px;padding:6px 10px;background:#00E5A011;border-radius:6px;">
+        ✓ Algunas barras se aprovechan de aberturas anteriores del presupuesto
+       </div>`
+    : '';
+
+  preview.innerHTML = `
+    <div class="preview-box">
+      <div class="preview-title">Vista previa · ${fmt(precioKg)}/kg</div>
+      ${filas}${vidFilas}
+      ${ahorroHtml}
+      <div class="preview-total"><span>Total x ${cant} u.</span><span>${fmt(total)}</span></div>
+    </div>`;
+  if (btnAb) btnAb.disabled = false;
+}
+
+async function confirmarAgregarAbertura() {
+  const linea_id = document.getElementById('m_linea')?.value;
+  const tipoId   = document.getElementById('m_tipo')?.value;
+  const W        = parseInt(document.getElementById('m_ancho')?.value);
+  const H        = parseInt(document.getElementById('m_alto')?.value);
+  const cant     = parseInt(document.getElementById('m_cant')?.value) || 1;
+  const pVid     = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
+  if (!W || !H) return;
+
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  const precioKg = getPrecioKgPresupuesto(p);
+
+  const tipos = TIPOS_ABERTURA[linea_id] || [];
+  const tipo = tipos.find(t => t.id === tipoId);
+  const params = {};
+  (tipo?.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
+
+  // Obtener barras existentes del presupuesto para bin packing consolidado
+  const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+  const barrasExistentes = getBarrasExistentes(absExistentes, state.perfiles);
+
+  const res = calcularAbertura(linea_id, tipoId, W, H, params, state.perfiles, state.herrajes, pVid, precioKg, barrasExistentes);
+  if (!res) return;
+
+  const linea = state.lineas.find(l => l.id === linea_id);
+  const ab = {
+    id: genId(),
+    presupuesto_id: state.presupuestoActivo,
+    linea_id,
+    linea: linea?.nombre || linea_id,
+    tipo_id: tipoId,
+    nombre: `${linea?.nombre} - ${tipo?.nombre}`,
+    ancho: W, alto: H, cantidad: cant,
+    params: JSON.stringify(params),
+    precio_vidrio: pVid,
+    precio_kg: precioKg,
+    costo_perfiles: res.costoPerfiles,
+    costo_vidrios:  res.costoVidrios,
+    costo_herrajes: res.costoHerrajes,
+    optimizacion: JSON.stringify(res.optimizacion),
+    vidrios:      JSON.stringify(res.vidrios),
+  };
+  state.aberturas.push(ab);
+  await sheetsAppend(SHEETS.aberturas, ab);
+  await recalcularTotal();
+  closeModal();
+  toast('Abertura agregada');
+  render();
+}
+
+function showModalLinea() {
+  showModal(`
+    <div class="modal-title">Nueva Linea</div>
+    <div class="form-group"><label>Nombre</label><input id="m_linea_nombre" placeholder="Ej: A40, Compact..."></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="crearLinea()">Crear</button>
+    </div>`);
+}
+async function crearLinea() {
+  const nombre = document.getElementById('m_linea_nombre')?.value?.trim();
+  if (!nombre) return;
+  const l = { id: genId(), nombre };
+  state.lineas.push(l);
+  await sheetsAppend(SHEETS.lineas, l);
+  closeModal(); toast('Linea creada'); render();
+}
+
+function editarPrecioKg(id) {
+  const pk = state.precios_kg.find(x => x.id === id);
+  if (!pk) return;
+  showModal(`
+    <div class="modal-title">Editar Precio por kg</div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:15px;font-weight:600;color:var(--text)">${pk.nombre}</div>
+      <div style="font-size:13px;color:var(--text3)">${pk.tipo}</div>
+    </div>
+    <div class="form-group">
+      <label>Precio por kg ($/kg)</label>
+      <input type="number" id="m_pk_precio" value="${pk.precio_kg}" style="font-family:'DM Mono',monospace">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="guardarPrecioKg('${id}')">Guardar</button>
+    </div>`);
+}
+
+async function guardarPrecioKg(id) {
+  const precio = parseFloat(document.getElementById('m_pk_precio')?.value);
+  if (!precio) return;
+  const pk = state.precios_kg.find(x => x.id === id);
+  if (!pk) return;
+  pk.precio_kg = precio;
+  await sheetsUpdateRow(SHEETS.precios_kg, id, { precio_kg: precio });
+  closeModal();
+  toast('Precio actualizado');
+  render();
+}
+
+function showModalPerfil() {
+  const lineaOpts = state.lineas.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+  showModal(`
+    <div class="modal-title">Nuevo Perfil</div>
+    <div class="form-group"><label>Linea</label><select id="m_p_linea">${lineaOpts}</select></div>
+    <div class="form-row">
+      <div class="form-group"><label>Codigo</label><input id="m_p_codigo" placeholder="Ej: 5201"></div>
+      <div class="form-group"><label>Nombre</label><input id="m_p_nombre" placeholder="Ej: Jamba Lateral"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Largo barra (mm)</label><input type="number" id="m_p_largo" value="6000"></div>
+      <div class="form-group"><label>Peso por tira (kg)</label><input type="number" id="m_p_peso" step="0.01" placeholder="Ej: 4.2"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="crearPerfil()">Crear</button>
+    </div>`);
+}
+async function crearPerfil() {
+  const p = {
+    id: genId(),
+    linea_id:   document.getElementById('m_p_linea')?.value,
+    codigo:     document.getElementById('m_p_codigo')?.value?.trim(),
+    nombre:     document.getElementById('m_p_nombre')?.value?.trim(),
+    largo_barra:document.getElementById('m_p_largo')?.value,
+    peso_tira:  document.getElementById('m_p_peso')?.value,
+  };
+  if (!p.nombre) return;
+  state.perfiles.push(p);
+  await sheetsAppend(SHEETS.perfiles, p);
+  closeModal(); toast('Perfil creado'); render();
+}
+
+function showModalHerraje() {
+  const lineaOpts = state.lineas.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+  showModal(`
+    <div class="modal-title">Nuevo Herraje</div>
+    <div class="form-group"><label>Linea</label><select id="m_h_linea">${lineaOpts}</select></div>
+    <div class="form-group"><label>Nombre</label><input id="m_h_nombre" placeholder="Ej: Rueda corrediza"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Precio ($)</label><input type="number" id="m_h_precio" value="400"></div>
+      <div class="form-group"><label>Unidad</label><select id="m_h_unidad"><option>u</option><option>par</option><option>metro</option></select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="crearHerraje()">Crear</button>
+    </div>`);
+}
+async function crearHerraje() {
+  const h = {
+    id: genId(),
+    linea_id: document.getElementById('m_h_linea')?.value,
+    nombre: document.getElementById('m_h_nombre')?.value?.trim(),
+    precio: document.getElementById('m_h_precio')?.value,
+    unidad: document.getElementById('m_h_unidad')?.value,
+  };
+  if (!h.nombre) return;
+  state.herrajes.push(h);
+  await sheetsAppend(SHEETS.herrajes, h);
+  closeModal(); toast('Herraje creado'); render();
+}
+
+function showModalStock() {
+  const perfilOpts = state.perfiles.map(p => {
+    const l = state.lineas.find(l => l.id === p.linea_id);
+    return `<option value="${p.id}" data-linea="${l?.nombre||''}">${l?.nombre||''} - ${p.nombre}</option>`;
+  }).join('');
+  showModal(`
+    <div class="modal-title">Agregar Sobrante</div>
+    <div class="form-group"><label>Perfil</label><select id="m_s_perfil">${perfilOpts}</select></div>
+    <div class="form-group"><label>Largo sobrante (mm)</label><input type="number" id="m_s_largo" placeholder="ej: 850"></div>
+    <div class="form-group"><label>Nota (opcional)</label><input id="m_s_nota" placeholder="De obra: Casa García"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="crearStock()">Guardar</button>
+    </div>`);
+}
+async function crearStock() {
+  const perfilId = document.getElementById('m_s_perfil')?.value;
+  const largo = document.getElementById('m_s_largo')?.value;
+  const nota = document.getElementById('m_s_nota')?.value;
+  if (!largo) return;
+  const perfil = state.perfiles.find(p => p.id === perfilId);
+  const linea = state.lineas.find(l => l.id === perfil?.linea_id);
+  const s = { id: genId(), perfil_id: perfilId, perfil_nombre: perfil?.nombre || '', linea: linea?.nombre || '', largo_mm: largo, nota, fecha: today() };
+  state.stock.push(s);
+  await sheetsAppend(SHEETS.stock, s);
+  closeModal(); toast('Sobrante registrado'); render();
+}
+
+// ============================================================
+// SVG DESCRIPTIVOS POR TIPO DE ABERTURA (con proporciones reales)
+// ============================================================
+function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH) {
+  // Calcular dimensiones respetando la proporción real de la abertura
+  maxW = maxW || 160;
+  maxH = maxH || 200;
+  const ratio = anchoMm / altoMm;
+  let W, H;
+  if (ratio >= 1) {
+    // Más ancha que alta
+    W = maxW;
+    H = Math.round(maxW / ratio);
+    if (H > maxH) { H = maxH; W = Math.round(maxH * ratio); }
+  } else {
+    // Más alta que ancha (puertas, etc.)
+    H = maxH;
+    W = Math.round(maxH * ratio);
+    if (W > maxW) { W = maxW; H = Math.round(maxW / ratio); }
+  }
+  // Asegurar mínimos
+  W = Math.max(W, 40); H = Math.max(H, 40);
+
+  const pad = 6;
+  const iW = W - pad*2;  // interior width
+  const iH = H - pad*2;  // interior height
+  const cx = W/2, cy = H/2;
+  const fc = '#1e3a5f';   // frame color
+  const gc = '#0ea5e9';   // glass/detail color
+  const gf = '#dbeafe';   // glass fill
+  const sw = Math.max(2, Math.round(Math.min(W,H)/30)); // stroke adaptivo
+
+  const label = anchoMm + 'x' + altoMm + 'mm';
+  const labelY = H + 14;
+  const totalH = H + 18;
+
+  let interior = '';
+
+  if (tipo_id === 'ventana-corrediza') {
+    const mid = pad + iW/2;
+    interior = ''
+      // divisor central
+      + '<line x1="'+mid+'" y1="'+pad+'" x2="'+mid+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>'
+      // hoja izquierda (vidrio)
+      + '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.8"/>'
+      // hoja derecha (vidrio)
+      + '<rect x="'+(mid+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.8"/>'
+      // flecha izquierda
+      + '<line x1="'+(pad+8)+'" y1="'+cy+'" x2="'+(mid-8)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>'
+      // flecha derecha
+      + '<line x1="'+(mid+8)+'" y1="'+cy+'" x2="'+(W-pad-8)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>';
+  }
+  else if (tipo_id === 'puerta-abrir') {
+    // Hoja completa
+    const bx = pad+2, by = pad+2, bw = iW-4, bh = iH-4;
+    // Arco de apertura (cuarto de círculo desde esquina)
+    const r = Math.min(bw, bh) * 0.85;
+    interior = ''
+      + '<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>'
+      // Arco de apertura
+      + '<path d="M '+(bx+bw)+' '+by+' A '+r+' '+r+' 0 0 0 '+bx+' '+(by+r)+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>'
+      // Manija
+      + '<circle cx="'+(bx+bw-6)+'" cy="'+cy+'" r="3" fill="'+gc+'"/>';
+  }
+  else if (tipo_id === 'puerta-corrediza') {
+    const mid = pad + iW/2;
+    interior = ''
+      // hoja frontal (más oscura)
+      + '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW/2-2)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="2"/>'
+      // hoja trasera (más transparente)
+      + '<rect x="'+(mid)+'" y="'+(pad+4)+'" width="'+(iW/2-2)+'" height="'+(iH-8)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1" opacity="0.4"/>'
+      // flecha
+      + '<line x1="'+(pad+8)+'" y1="'+cy+'" x2="'+(mid-4)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>'
+      + '<circle cx="'+(mid-8)+'" cy="'+cy+'" r="3" fill="'+gc+'"/>';
+  }
+  else if (tipo_id === 'puerta-ventana-corrediza') {
+    // Similar a ventana corrediza pero más alta — se nota en la proporción automática
+    const mid = pad + iW/2;
+    interior = ''
+      + '<line x1="'+mid+'" y1="'+pad+'" x2="'+mid+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>'
+      + '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="2"/>'
+      + '<rect x="'+(mid+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.7"/>'
+      // Manija en hoja izquierda
+      + '<circle cx="'+(mid-8)+'" cy="'+cy+'" r="4" fill="'+gc+'"/>'
+      // Flecha deslizamiento
+      + '<line x1="'+(pad+10)+'" y1="'+cy+'" x2="'+(mid-14)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>';
+  }
+  else if (tipo_id === 'pano-fijo') {
+    interior = ''
+      + '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>'
+      // Cruces decorativas (reflexión de luz)
+      + '<line x1="'+(pad+6)+'" y1="'+(pad+6)+'" x2="'+(W-pad-6)+'" y2="'+(H-pad-6)+'" stroke="'+gc+'" stroke-width="1" opacity="0.3"/>'
+      + '<line x1="'+(W-pad-6)+'" y1="'+(pad+6)+'" x2="'+(pad+6)+'" y2="'+(H-pad-6)+'" stroke="'+gc+'" stroke-width="1" opacity="0.3"/>';
+  }
+  else if (tipo_id === 'ventana-abrir') {
+    const bx = pad+2, by = pad+2, bw = iW-4, bh = iH-4;
+    const r = Math.min(bw, bh) * 0.8;
+    interior = ''
+      + '<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>'
+      // Arco apertura desde abajo
+      + '<path d="M '+bx+' '+(by+bh)+' A '+r+' '+r+' 0 0 1 '+(bx+r)+' '+by+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>'
+      + '<circle cx="'+(bx+bw-6)+'" cy="'+cy+'" r="3" fill="'+gc+'"/>';
+  }
+  else if (tipo_id === 'banderola') {
+    const midY = pad + iH * 0.4;
+    interior = ''
+      // parte superior (banderola que abre)
+      + '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW-4)+'" height="'+(midY-pad-2)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>'
+      // arco de apertura
+      + '<path d="M '+(pad+2)+' '+(pad+2)+' L '+cx+' '+midY+' L '+(W-pad-2)+' '+(pad+2)+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>'
+      // parte inferior (fijo)
+      + '<rect x="'+(pad+2)+'" y="'+(midY+2)+'" width="'+(iW-4)+'" height="'+(H-pad-midY-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1" opacity="0.5"/>';
+  }
+  else {
+    interior = '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
+  }
+
+  return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg">'
+    // Marco exterior
+    + '<rect x="0" y="0" width="'+W+'" height="'+H+'" rx="2" fill="#f8fafc" stroke="'+fc+'" stroke-width="'+sw+'"/>'
+    + interior
+    // Etiqueta de medidas
+    + '<text x="'+cx+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="9" fill="'+fc+'" font-family="monospace" font-weight="600">'+label+'</text>'
+    + '</svg>';
+}
+
+// Convierte SVG a PNG data URI via Canvas (para Word)
+function svgToPngDataUri(tipo_id, anchoMm, altoMm) {
+  return new Promise((resolve) => {
+    const svg = svgAbertura(tipo_id, anchoMm, altoMm, 120, 160);
+    const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width || 120;
+      canvas.height = img.height || 175;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(''); };
+    img.src = url;
+  });
+}
+
+
+// ============================================================
+// IMPRIMIR PRESUPUESTO PDF
+// ============================================================
+function imprimirPresupuesto(id) {
+  const p = state.presupuestos.find(x => x.id === id);
+  if (!p) return;
+  const abs = state.aberturas.filter(a => a.presupuesto_id === id);
+  const markup = Number(p.markup || 0);
+  const subtotal = abs.reduce((s, a) => s + Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0), 0);
+  const totalFinal = subtotal * (1 + markup / 100);
+
+  const aberturasHtml = abs.map((a, i) => {
+    const svg = svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180);
+    return `
+      <div style="display:flex;align-items:center;gap:24px;padding:18px 0;border-bottom:1px solid #e2e8f0;break-inside:avoid;">
+        <div style="flex:0 0 150px;display:flex;align-items:center;justify-content:center;">${svg}</div>
+        <div style="flex:1;">
+          <div style="font-size:16px;font-weight:700;color:#0f172a;font-family:'Syne',sans-serif;">${a.nombre}</div>
+          <div style="margin-top:6px;display:flex;gap:16px;flex-wrap:wrap;">
+            <span style="font-size:13px;color:#475569;"><b>Medidas:</b> ${a.ancho} x ${a.alto} mm</span>
+            <span style="font-size:13px;color:#475569;"><b>Cantidad:</b> ${a.cantidad} u.</span>
+            <span style="font-size:13px;color:#475569;"><b>Linea:</b> ${a.linea}</span>
+          </div>
+          <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
+            <span style="background:#e0f2fe;color:#0369a1;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;">${p.color_al || ''}</span>
+            <span style="background:#f0fdf4;color:#15803d;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;">${p.tipo_al || ''}</span>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;min-width:30px;text-align:center;font-weight:700;">${String(i+1).padStart(2,'0')}</div>
+      </div>`;
+  }).join('');
+
+  const ST = '<scr'+'ipt>window.onload=()=>window.print();</'+'script>';
+  const css = '<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;color:#0f172a;background:#fff;padding:40px;max-width:800px;margin:0 auto}@media print{body{padding:20px}}</style>';
+  const html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Presupuesto - '+p.cliente+'</title>'+css+'</head><body>'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:24px;border-bottom:3px solid #0f172a;">'
+      +'<div><div style="font-size:28px;font-weight:800;letter-spacing:-1px;">Alum<span style="color:#00b37e;">Pro</span></div>'
+      +'<div style="font-size:12px;color:#64748b;">Gestion de Aberturas de Aluminio</div></div>'
+      +'<div style="text-align:right;"><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;">Presupuesto</div>'
+      +'<div style="font-size:12px;color:#475569;">'+p.fecha+'</div></div>'
+    +'</div>'
+    +'<div style="background:#f8fafc;border-radius:12px;padding:20px 24px;margin-bottom:28px;border:1px solid #e2e8f0;">'
+      +'<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;">'
+        +'<div><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Cliente</div>'
+        +'<div style="font-size:20px;font-weight:700;">'+p.cliente+'</div>'
+        +'<div style="font-size:13px;color:#64748b;margin-top:2px;">'+p.obra+'</div></div>'
+        +'<div style="text-align:right;"><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Especificacion</div>'
+        +'<div style="font-size:13px;color:#475569;"><b>Linea:</b> '+(p.linea||'Modena')+'</div>'
+        +'<div style="font-size:13px;color:#475569;"><b>Color:</b> '+(p.color_al||'-')+'</div>'
+        +'<div style="font-size:13px;color:#475569;"><b>Tipo:</b> '+(p.tipo_al||'-')+'</div>'
+        +'</div>'
+      +'</div>'
+    +'</div>'
+    +'<div style="font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:12px;font-weight:700;">Detalle de aberturas ('+abs.length+')</div>'
+    +(aberturasHtml||'<p style="color:#94a3b8;padding:20px 0;">Sin aberturas cargadas</p>')
+    +'<div style="margin-top:28px;padding:20px 24px;background:#0f172a;border-radius:12px;display:flex;justify-content:space-between;align-items:center;">'
+      +'<div style="color:#94a3b8;font-size:13px;">Incluye materiales, vidrios y markup del '+markup+'%</div>'
+      +'<div><div style="font-size:11px;color:#94a3b8;text-align:right;margin-bottom:2px;">TOTAL</div>'
+      +'<div style="font-size:26px;font-weight:800;color:#00b37e;">'+fmt(totalFinal)+'</div></div>'
+    +'</div>'
+    +'<div style="margin-top:24px;text-align:center;font-size:11px;color:#cbd5e1;">Presupuesto generado por AlumPro - Valido por 15 dias</div>'
+    +ST+'</body></html>';
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
+// ============================================================
+// EXPORTAR WORD (.doc HTML)
+// ============================================================
+async function exportarWord(id) {
+  const p = state.presupuestos.find(x => x.id === id);
+  if (!p) return;
+  toast('Generando Word...');
+  const abs = state.aberturas.filter(a => a.presupuesto_id === id);
+  const markup = Number(p.markup || 0);
+  const subtotal = abs.reduce((s, a) => s + Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0), 0);
+  const totalFinal = subtotal * (1 + markup / 100);
+
+  // Generar todos los PNG en paralelo
+  const pngs = await Promise.all(abs.map(a => svgToPngDataUri(a.tipo_id, a.ancho, a.alto)));
+
+  const filaAberturas = abs.map((a, i) => {
+    const total = Number(a.costo_perfiles||0)+Number(a.costo_vidrios||0)+Number(a.costo_herrajes||0);
+    const imgTag = pngs[i] ? '<img src="'+pngs[i]+'" width="90" style="display:block;margin:0 auto;" alt="abertura">' : '';
+    return '<tr>'
+      +'<td style="border:1px solid #ccc;padding:8px;text-align:center;vertical-align:middle;">'+(i+1)+'</td>'
+      +'<td style="border:1px solid #ccc;padding:10px;text-align:center;vertical-align:middle;">'+imgTag+'</td>'
+      +'<td style="border:1px solid #ccc;padding:8px;vertical-align:middle;">'
+        +'<b style="font-size:11pt;">'+a.nombre+'</b><br>'
+        +'<span style="font-size:9pt;color:#555;">'+a.ancho+' x '+a.alto+' mm &nbsp;·&nbsp; '+a.cantidad+' u. &nbsp;·&nbsp; '+a.linea+'</span><br>'
+        +'<span style="font-size:9pt;color:#555;">'+(p.color_al||'-')+' / '+(p.tipo_al||'-')+'</span>'
+      +'</td>'
+      +'<td style="border:1px solid #ccc;padding:8px;text-align:right;vertical-align:middle;white-space:nowrap;font-weight:bold;font-size:11pt;">'+fmt(total * Number(a.cantidad))+'</td>'
+      +'</tr>';
+  }).join('');
+
+  const html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
+    +'<head><meta charset="UTF-8">'
+    +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->'
+    +'<style>'
+    +'body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#1a1a1a;margin:2cm}'
+    +'h1{font-size:22pt;color:#0f172a;margin-bottom:4px}'
+    +'h2{font-size:13pt;color:#374151;border-bottom:2px solid #0f172a;padding-bottom:4px;margin-top:24px}'
+    +'.subtitulo{font-size:10pt;color:#64748b;margin-bottom:20px}'
+    +'.datos-grid{display:table;width:100%;margin-bottom:20px}'
+    +'.datos-col{display:table-cell;width:50%;vertical-align:top}'
+    +'.label{font-size:9pt;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px}'
+    +'.valor{font-size:11pt;font-weight:bold;margin-bottom:12px}'
+    +'table{border-collapse:collapse;width:100%;margin-bottom:16px}'
+    +'th{background:#0f172a;color:#fff;padding:8px;text-align:left;font-size:10pt}'
+    +'td{font-size:10pt}'
+    +'.total-box{background:#f8fafc;border:2px solid #0f172a;padding:16px;text-align:right;margin-top:16px}'
+    +'.total-label{font-size:10pt;color:#64748b}'
+    +'.total-valor{font-size:18pt;font-weight:bold;color:#00b37e}'
+    +'.footer{font-size:9pt;color:#94a3b8;text-align:center;margin-top:32px;border-top:1px solid #e2e8f0;padding-top:12px}'
+    +'</style></head><body>'
+    +'<h1>AlumPro</h1>'
+    +'<div class="subtitulo">Presupuesto de Aberturas de Aluminio</div>'
+    +'<div class="datos-grid">'
+      +'<div class="datos-col">'
+        +'<div class="label">Cliente</div><div class="valor">'+p.cliente+'</div>'
+        +'<div class="label">Obra</div><div class="valor">'+p.obra+'</div>'
+        +'<div class="label">Fecha</div><div class="valor">'+p.fecha+'</div>'
+      +'</div>'
+      +'<div class="datos-col">'
+        +'<div class="label">Linea de aluminio</div><div class="valor">'+(p.linea||'Modena')+'</div>'
+        +'<div class="label">Color / Tipo</div><div class="valor">'+(p.color_al||'-')+' / '+(p.tipo_al||'-')+'</div>'
+        +'<div class="label">Precio kg</div><div class="valor">'+fmt(p.precio_kg||0)+'/kg</div>'
+      +'</div>'
+    +'</div>'
+    +'<h2>Detalle de aberturas</h2>'
+    +'<table><thead><tr>'
+      +'<th style="width:4%">#</th>'
+      +'<th style="width:18%;text-align:center;">Dibujo</th>'
+      +'<th style="width:60%">Abertura / Detalle</th>'
+      +'<th style="width:18%;text-align:right;">Subtotal</th>'
+    +'</tr></thead><tbody>'
+    +filaAberturas
+    +'</tbody></table>'
+    +'<h2>Resumen economico</h2>'
+    +'<table><thead><tr><th>Concepto</th><th>Importe</th></tr></thead><tbody>'
+      +'<tr><td style="border:1px solid #ccc;padding:8px">Perfiles de aluminio</td><td style="border:1px solid #ccc;padding:8px;text-align:right">'+fmt(abs.reduce((s,a)=>s+Number(a.costo_perfiles||0),0))+'</td></tr>'
+      +'<tr><td style="border:1px solid #ccc;padding:8px">Vidrios</td><td style="border:1px solid #ccc;padding:8px;text-align:right">'+fmt(abs.reduce((s,a)=>s+Number(a.costo_vidrios||0),0))+'</td></tr>'
+      +'<tr><td style="border:1px solid #ccc;padding:8px">Herrajes</td><td style="border:1px solid #ccc;padding:8px;text-align:right">'+fmt(abs.reduce((s,a)=>s+Number(a.costo_herrajes||0),0))+'</td></tr>'
+      +'<tr><td style="border:1px solid #ccc;padding:8px">Markup ('+markup+'%)</td><td style="border:1px solid #ccc;padding:8px;text-align:right">'+fmt(totalFinal - subtotal)+'</td></tr>'
+    +'</tbody></table>'
+    +'<div class="total-box">'
+      +'<div class="total-label">TOTAL FINAL</div>'
+      +'<div class="total-valor">'+fmt(totalFinal)+'</div>'
+    +'</div>'
+    +'<p style="font-size:9pt;color:#64748b;margin-top:12px">Notas adicionales:<br><br>___________________________________________________________________________<br><br>___________________________________________________________________________</p>'
+    +'<div class="footer">Presupuesto generado por AlumPro · Valido por 15 dias</div>'
+    +'</body></html>';
+
+  const blob = new Blob(['\ufeff' + html], { type: 'application/msword;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Presupuesto-' + p.cliente.replace(/\s+/g,'-') + '-' + p.fecha + '.doc';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+loadAll();
+</script>
+</body>
+</html>
