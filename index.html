@@ -81,6 +81,8 @@
   }
   .btn-primary:hover { opacity: 0.88; }
   .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-loading { position: relative; pointer-events: none; opacity: 0.75; }
+  .btn-loading::after { content: ''; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; border: 2px solid rgba(0,0,0,0.3); border-top-color: #0A0F1E; border-radius: 50%; animation: spin 0.6s linear infinite; }
   .btn-secondary {
     padding: 10px 22px; background: transparent; color: var(--text2);
     border: 1px solid var(--border2); border-radius: 9px; font-weight: 500;
@@ -1111,6 +1113,20 @@ function setCriterioPrecio(valor) {
   render();
 }
 
+function setBtnLoading(btn, loading, textoOriginal) {
+  if (!btn) return;
+  if (loading) {
+    btn.dataset.originalText = btn.textContent;
+    btn.textContent = textoOriginal || 'Procesando...';
+    btn.classList.add('btn-loading');
+    btn.disabled = true;
+  } else {
+    btn.textContent = btn.dataset.originalText || btn.textContent;
+    btn.classList.remove('btn-loading');
+    btn.disabled = false;
+  }
+}
+
 function toggleMobileMenu() {
   const menu = document.getElementById('mobileMenu');
   if (menu) menu.classList.toggle('open');
@@ -1857,53 +1873,52 @@ async function moverKanban(id, col) {
 async function eliminarAbertura(id) {
   if (!confirm('¿Eliminar esta abertura? Los costos del presupuesto se recalcularán.')) return;
 
-  // Eliminar del state y Sheet
-  state.aberturas = state.aberturas.filter(a => a.id !== id);
-  await sheetsDeleteRow(SHEETS.aberturas, id);
+  // Mostrar loading en toda la página
+  const root = document.getElementById('appRoot');
+  const originalContent = root.innerHTML;
+  root.innerHTML += '<div style="position:fixed;inset:0;background:rgba(10,15,30,0.7);z-index:500;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--text2);font-size:14px;"><div class="spinner"></div> Recalculando...</div>';
 
-  // Recalcular bin packing completo para las aberturas restantes
-  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
-  if (p) {
-    const precioKg = getPrecioKgPresupuesto(p);
-    const absRestantes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+  try {
+    state.aberturas = state.aberturas.filter(a => a.id !== id);
+    await sheetsDeleteRow(SHEETS.aberturas, id);
 
-    // Recalcular cada abertura en orden, acumulando barras
-    let barrasAcumuladas = {};
-    for (const a of absRestantes) {
-      const params = tryParse(a.params, {});
-      const res = calcularAbertura(
-        a.linea_id, a.tipo_id,
-        Number(a.ancho), Number(a.alto),
-        params, state.perfiles, state.herrajes,
-        Number(a.precio_vidrio || 8500), precioKg,
-        barrasAcumuladas
-      );
-      if (!res) continue;
-
-      // Actualizar costos en state
-      a.costo_perfiles = res.costoPerfiles;
-      a.costo_vidrios  = res.costoVidrios;
-      a.costo_herrajes = res.costoHerrajes;
-      a.optimizacion   = JSON.stringify(res.optimizacion);
-      a.vidrios        = JSON.stringify(res.vidrios);
-
-      // Actualizar en Sheet
-      await sheetsUpdateRow(SHEETS.aberturas, a.id, {
-        costo_perfiles: res.costoPerfiles,
-        costo_vidrios:  res.costoVidrios,
-        costo_herrajes: res.costoHerrajes,
-        optimizacion:   JSON.stringify(res.optimizacion),
-        vidrios:        JSON.stringify(res.vidrios),
-      });
-
-      // Acumular barras para la siguiente
-      barrasAcumuladas = res.barrasFinales;
+    const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+    if (p) {
+      const precioKg = getPrecioKgPresupuesto(p);
+      const absRestantes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+      let barrasAcumuladas = {};
+      for (const a of absRestantes) {
+        const params = tryParse(a.params, {});
+        const res = calcularAbertura(
+          a.linea_id, a.tipo_id,
+          Number(a.ancho), Number(a.alto),
+          params, state.perfiles, state.herrajes,
+          Number(a.precio_vidrio || 8500), precioKg,
+          barrasAcumuladas
+        );
+        if (!res) continue;
+        a.costo_perfiles = res.costoPerfiles;
+        a.costo_vidrios  = res.costoVidrios;
+        a.costo_herrajes = res.costoHerrajes;
+        a.optimizacion   = JSON.stringify(res.optimizacion);
+        a.vidrios        = JSON.stringify(res.vidrios);
+        await sheetsUpdateRow(SHEETS.aberturas, a.id, {
+          costo_perfiles: res.costoPerfiles,
+          costo_vidrios:  res.costoVidrios,
+          costo_herrajes: res.costoHerrajes,
+          optimizacion:   JSON.stringify(res.optimizacion),
+          vidrios:        JSON.stringify(res.vidrios),
+        });
+        barrasAcumuladas = res.barrasFinales;
+      }
     }
+    await recalcularTotal();
+    toast('Abertura eliminada — costos recalculados');
+  } catch(e) {
+    toast('Error al eliminar', 'error');
+  } finally {
+    render();
   }
-
-  await recalcularTotal();
-  toast('Abertura eliminada — costos recalculados');
-  render();
 }
 
 async function recalcularTotal() {
@@ -2192,62 +2207,65 @@ function previewCalc() {
 }
 
 async function confirmarAgregarAbertura() {
-  const linea_id = document.getElementById('m_linea')?.value;
-  const tipoId   = document.getElementById('m_tipo')?.value;
-  const W        = parseInt(document.getElementById('m_ancho')?.value);
-  const H        = parseInt(document.getElementById('m_alto')?.value);
-  const cant     = parseInt(document.getElementById('m_cant')?.value) || 1;
-  const pVid     = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
-  if (!W || !H) return;
+  const btn = document.getElementById('btnAgregarAb');
+  setBtnLoading(btn, true, 'Calculando...');
+  try {
+    const linea_id = document.getElementById('m_linea')?.value;
+    const tipoId   = document.getElementById('m_tipo')?.value;
+    const W        = parseInt(document.getElementById('m_ancho')?.value);
+    const H        = parseInt(document.getElementById('m_alto')?.value);
+    const cant     = parseInt(document.getElementById('m_cant')?.value) || 1;
+    const pVid     = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
+    if (!W || !H) return;
 
-  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
-  const precioKg = getPrecioKgPresupuesto(p);
+    const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+    const precioKg = getPrecioKgPresupuesto(p);
+    const tipos = TIPOS_ABERTURA[linea_id] || [];
+    const tipo = tipos.find(t => t.id === tipoId);
+    const params = {};
+    (tipo?.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
 
-  const tipos = TIPOS_ABERTURA[linea_id] || [];
-  const tipo = tipos.find(t => t.id === tipoId);
-  const params = {};
-  (tipo?.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
+    const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+    const barrasExistentes = getBarrasExistentes(absExistentes, state.perfiles);
+    const res = calcularAbertura(linea_id, tipoId, W, H, params, state.perfiles, state.herrajes, pVid, precioKg, barrasExistentes);
+    if (!res) return;
 
-  // Obtener barras existentes del presupuesto para bin packing consolidado
-  const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
-  const barrasExistentes = getBarrasExistentes(absExistentes, state.perfiles);
+    const linea = state.lineas.find(l => l.id === linea_id);
+    const ab = {
+      id: genId(),
+      presupuesto_id: state.presupuestoActivo,
+      linea_id,
+      linea: linea?.nombre || linea_id,
+      tipo_id: tipoId,
+      nombre: `${linea?.nombre} - ${tipo?.nombre}`,
+      ancho: W, alto: H, cantidad: cant,
+      params: JSON.stringify(params),
+      precio_vidrio: pVid,
+      precio_kg: precioKg,
+      costo_perfiles: res.costoPerfiles,
+      costo_vidrios:  res.costoVidrios,
+      costo_herrajes: res.costoHerrajes,
+      optimizacion: JSON.stringify(res.optimizacion),
+      vidrios:      JSON.stringify(res.vidrios),
+    };
+    state.aberturas.push(ab);
+    await sheetsAppend(SHEETS.aberturas, ab);
 
-  const res = calcularAbertura(linea_id, tipoId, W, H, params, state.perfiles, state.herrajes, pVid, precioKg, barrasExistentes);
-  if (!res) return;
-
-  const linea = state.lineas.find(l => l.id === linea_id);
-  const ab = {
-    id: genId(),
-    presupuesto_id: state.presupuestoActivo,
-    linea_id,
-    linea: linea?.nombre || linea_id,
-    tipo_id: tipoId,
-    nombre: `${linea?.nombre} - ${tipo?.nombre}`,
-    ancho: W, alto: H, cantidad: cant,
-    params: JSON.stringify(params),
-    precio_vidrio: pVid,
-    precio_kg: precioKg,
-    costo_perfiles: res.costoPerfiles,
-    costo_vidrios:  res.costoVidrios,
-    costo_herrajes: res.costoHerrajes,
-    optimizacion: JSON.stringify(res.optimizacion),
-    vidrios:      JSON.stringify(res.vidrios),
-  };
-  state.aberturas.push(ab);
-  await sheetsAppend(SHEETS.aberturas, ab);
-
-  // Calcular sobrantes con el criterio proporcional y umbral configurado
-  const todasAbs = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
-  const costosConSobrantes = calcularCostoAberturas(
-    todasAbs, state.perfiles, state.herrajes, precioKg,
-    'proporcional', state.umbral_sobrante
-  );
-  await agregarSobrantesAStock(costosConSobrantes, [ab]);
-
-  await recalcularTotal();
-  closeModal();
-  toast('Abertura agregada');
-  render();
+    const todasAbs = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+    const costosConSobrantes = calcularCostoAberturas(
+      todasAbs, state.perfiles, state.herrajes, precioKg,
+      'proporcional', state.umbral_sobrante
+    );
+    await agregarSobrantesAStock(costosConSobrantes, [ab]);
+    await recalcularTotal();
+    closeModal();
+    toast('Abertura agregada');
+  } catch(e) {
+    toast('Error al agregar abertura', 'error');
+    setBtnLoading(btn, false);
+  } finally {
+    render();
+  }
 }
 
 function showModalLinea() {
@@ -2547,11 +2565,19 @@ function imprimirPresupuesto(id) {
   if (!p) return;
   const abs = state.aberturas.filter(a => a.presupuesto_id === id);
   const markup = Number(p.markup || 0);
-  const subtotal = abs.reduce((s, a) => s + Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0), 0);
+  const criterio = state._criterioPrecio || 'proporcional';
+  const precioKg = getPrecioKgPresupuesto(p);
+
+  // Calcular costos con el criterio activo
+  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+  const subtotal = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
   const totalFinal = subtotal * (1 + markup / 100);
 
   const aberturasHtml = abs.map((a, i) => {
     const svg = svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180);
+    const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0 };
+    const precioUnitario = c.perfiles + c.vidrios + c.herrajes;
+    const precioTotal = precioUnitario * Number(a.cantidad);
     return `
       <div style="display:flex;align-items:center;gap:24px;padding:18px 0;border-bottom:1px solid #e2e8f0;break-inside:avoid;">
         <div style="flex:0 0 150px;display:flex;align-items:center;justify-content:center;">${svg}</div>
@@ -2559,7 +2585,7 @@ function imprimirPresupuesto(id) {
           <div style="font-size:16px;font-weight:700;color:#0f172a;font-family:'Syne',sans-serif;">${a.nombre}</div>
           <div style="margin-top:6px;display:flex;gap:16px;flex-wrap:wrap;">
             <span style="font-size:13px;color:#475569;"><b>Medidas:</b> ${a.ancho} x ${a.alto} mm</span>
-            <span style="font-size:13px;color:#475569;"><b>Cantidad:</b> ${a.cantidad} u.</span>
+            <span style="font-size:13px;color:#475569;"><b>Cantidad:</b> ${a.cantidad} u. · <b>${fmt(precioUnitario)}</b> c/u</span>
             <span style="font-size:13px;color:#475569;"><b>Linea:</b> ${a.linea}</span>
           </div>
           <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
@@ -2567,7 +2593,10 @@ function imprimirPresupuesto(id) {
             <span style="background:#f0fdf4;color:#15803d;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;">${p.tipo_al || ''}</span>
           </div>
         </div>
-        <div style="font-size:11px;color:#94a3b8;min-width:30px;text-align:center;font-weight:700;">${String(i+1).padStart(2,'0')}</div>
+        <div style="text-align:right;min-width:80px;">
+          <div style="font-size:15px;font-weight:800;color:#0f172a;">${fmt(precioTotal)}</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">${String(i+1).padStart(2,'0')}</div>
+        </div>
       </div>`;
   }).join('');
 
@@ -2594,8 +2623,7 @@ function imprimirPresupuesto(id) {
     +'</div>'
     +'<div style="font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:12px;font-weight:700;">Detalle de aberturas ('+abs.length+')</div>'
     +(aberturasHtml||'<p style="color:#94a3b8;padding:20px 0;">Sin aberturas cargadas</p>')
-    +'<div style="margin-top:28px;padding:20px 24px;background:#0f172a;border-radius:12px;display:flex;justify-content:space-between;align-items:center;">'
-      +'<div style="color:#94a3b8;font-size:13px;">Incluye materiales, vidrios y markup del '+markup+'%</div>'
+    +'<div style="margin-top:28px;padding:20px 24px;background:#0f172a;border-radius:12px;display:flex;justify-content:flex-end;align-items:center;">'
       +'<div><div style="font-size:11px;color:#94a3b8;text-align:right;margin-bottom:2px;">TOTAL</div>'
       +'<div style="font-size:26px;font-weight:800;color:#00b37e;">'+fmt(totalFinal)+'</div></div>'
     +'</div>'
