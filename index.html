@@ -41,6 +41,21 @@
   .logo-text { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; letter-spacing: -0.5px; }
   .logo-text span { color: var(--accent); }
   .header-nav { display: flex; gap: 4px; }
+  .hamburger { display: none; background: transparent; border: none; cursor: pointer; color: var(--text2); padding: 6px; }
+  .mobile-menu { display: none; position: fixed; inset: 0; top: 56px; background: var(--bg); z-index: 99; flex-direction: column; padding: 16px; gap: 4px; }
+  .mobile-menu.open { display: flex; }
+  .mobile-nav-btn { padding: 14px 18px; background: transparent; border: none; color: var(--text2); cursor: pointer; font-size: 15px; font-family: 'DM Sans', sans-serif; border-radius: 10px; font-weight: 500; text-align: left; border-bottom: 1px solid var(--border); }
+  .mobile-nav-btn:hover, .mobile-nav-btn.active { background: var(--surface2); color: var(--accent); }
+  @media (max-width: 600px) {
+    .header-nav { display: none; }
+    .hamburger { display: flex; }
+    main { padding: 20px 14px; }
+    .card-grid { grid-template-columns: 1fr; }
+    .page-header { flex-direction: column; gap: 10px; }
+    .detail-header { flex-direction: column; }
+    .kanban-board { grid-template-columns: 1fr; }
+    .form-row { flex-direction: column; }
+  }
   .nav-btn {
     padding: 7px 16px; background: transparent; border: none; color: var(--text2);
     cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif;
@@ -224,7 +239,18 @@
     <button class="nav-btn" onclick="navigate('stock')">Stock</button>
     <button class="nav-btn" onclick="navigate('config')">Configuracion</button>
   </nav>
+  <button class="hamburger" onclick="toggleMobileMenu()" id="hamburgerBtn">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
 </header>
+<div class="mobile-menu" id="mobileMenu">
+  <button class="mobile-nav-btn active" onclick="navigate('presupuestos');toggleMobileMenu()">📋 Presupuestos</button>
+  <button class="mobile-nav-btn" onclick="navigate('kanban');toggleMobileMenu()">📌 Kanban de Obras</button>
+  <button class="mobile-nav-btn" onclick="navigate('stock');toggleMobileMenu()">📦 Stock</button>
+  <button class="mobile-nav-btn" onclick="navigate('config');toggleMobileMenu()">⚙️ Configuracion</button>
+</div>
 
 <main id="appRoot">
   <div class="loader"><div class="spinner"></div> Cargando datos...</div>
@@ -815,20 +841,8 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
 
         const mmTotalEnBarra = Object.values(piezasPorAb).reduce((s, v) => s + v, 0);
 
-        if (pctSobrante <= umbralSobrante) {
-          // Desperdicio inevitable → cobrar barra completa distribuida por mm usados
-          for (const [abId, mmAb] of Object.entries(piezasPorAb)) {
-            const fraccion = mmTotalEnBarra > 0 ? mmAb / mmTotalEnBarra : 0;
-            costos[abId].perfiles += costoPorBarra * fraccion;
-          }
-        } else {
-          // Sobrante grande → cobrar solo mm usados, el sobrante va al stock
-          for (const [abId, mmAb] of Object.entries(piezasPorAb)) {
-            const fraccion = mmTotalEnBarra > 0 ? mmAb / mmTotalEnBarra : 0;
-            // Paga su proporción de los mm usados de la barra
-            costos[abId].perfiles += costoPorBarra * (mmUsados / largoBarra) * fraccion;
-          }
-          // Registrar sobrante para agregar al stock
+        // Siempre registrar sobrante en stock si es suficientemente grande (>50mm)
+        if ((barra.resto || 0) > 50) {
           const primerAbId = Object.keys(piezasPorAb)[0];
           if (primerAbId && costos[primerAbId]) {
             costos[primerAbId].sobrantesAStock.push({
@@ -837,6 +851,20 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
               perfil_codigo: perfil.codigo,
               largo_mm: Math.round(barra.resto || 0),
             });
+          }
+        }
+
+        if (pctSobrante <= umbralSobrante) {
+          // Desperdicio inevitable → cobrar barra completa distribuida por mm usados
+          for (const [abId, mmAb] of Object.entries(piezasPorAb)) {
+            const fraccion = mmTotalEnBarra > 0 ? mmAb / mmTotalEnBarra : 0;
+            costos[abId].perfiles += costoPorBarra * fraccion;
+          }
+        } else {
+          // Sobrante grande → cobrar solo mm usados proporcionalmente
+          for (const [abId, mmAb] of Object.entries(piezasPorAb)) {
+            const fraccion = mmTotalEnBarra > 0 ? mmAb / mmTotalEnBarra : 0;
+            costos[abId].perfiles += costoPorBarra * (mmUsados / largoBarra) * fraccion;
           }
         }
       }
@@ -1092,6 +1120,11 @@ function setCriterioPrecio(valor) {
   render();
 }
 
+function toggleMobileMenu() {
+  const menu = document.getElementById('mobileMenu');
+  if (menu) menu.classList.toggle('open');
+}
+
 function attachEvents() {}
 
 function render() {
@@ -1110,9 +1143,17 @@ function render() {
 // ============================================================
 function renderLista() {
   const ps = state.presupuestos;
+  const criterio = state._criterioPrecio || 'proporcional';
   const cards = ps.length ? ps.map(p => {
     const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
-    const total = fmt(p.total_final);
+    const precioKg = getPrecioKgPresupuesto(p);
+    let totalMostrar = 0;
+    if (abs.length > 0) {
+      const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+      const subtotal = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
+      totalMostrar = subtotal * (1 + Number(p.markup || 0) / 100);
+    }
+    const total = fmt(totalMostrar);
     return `
     <div class="card card-clickable" onclick="navigate('presupuestos', '${p.id}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
@@ -1341,10 +1382,10 @@ function renderDetalle() {
           const rowId = 'mr_' + k.replace(/[^a-zA-Z0-9]/g, '_');
           const barrasHtml = m.detalleBarras.map(b => {
             const piezasHtml = (b.piezas || []).map(pz =>
-              '<span style="display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 7px;font-size:11px;font-family:\'DM Mono\',monospace;margin:2px;">'
-              + pz.largo + 'mm'
-              + (pz.desc ? '<span style="color:var(--text3);font-size:10px;margin-left:4px;">'+pz.desc+'</span>' : '')
-              + '</span>'
+              '<div style="display:inline-flex;align-items:center;gap:4px;background:var(--accent)22;border:1px solid var(--accent)44;border-radius:4px;padding:3px 8px;font-size:11px;margin:2px;">'
+              + '<span style="font-family:\'DM Mono\',monospace;color:var(--accent);font-weight:700;">' + pz.largo + 'mm</span>'
+              + (pz.desc ? '<span style="color:var(--text3);font-size:10px;">— ' + pz.desc + '</span>' : '')
+              + '</div>'
             ).join('');
             const usadoMm = m.largoBarra - (b.resto || 0);
             const pct = Math.round((usadoMm / m.largoBarra) * 100);
@@ -2098,55 +2139,81 @@ function previewCalc() {
 
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
   const precioKg = getPrecioKgPresupuesto(p);
+  const criterio = state._criterioPrecio || 'proporcional';
 
-  // Obtener barras existentes del presupuesto actual
+  // Simular abertura nueva junto con las existentes para calcular costo real
   const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
-  const barrasExistentes = getBarrasExistentes(absExistentes, state.perfiles);
-
   const tipos = TIPOS_ABERTURA[linea] || [];
   const tipo  = tipos.find(t => t.id === tipoId);
   if (!tipo) return;
-
   const params = {};
   (tipo.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
 
-  const res = calcularAbertura(linea, tipoId, W, H, params, state.perfiles, state.herrajes, pVid, precioKg, barrasExistentes);
-  if (!res) return;
+  // Abertura simulada (id temporal)
+  const abSimulada = {
+    id: '__preview__',
+    presupuesto_id: state.presupuestoActivo,
+    linea_id: linea,
+    tipo_id: tipoId,
+    ancho: W, alto: H, cantidad: cant,
+    params: JSON.stringify(params),
+    precio_vidrio: pVid,
+    vidrios: '[]',
+  };
+  const todasConNueva = [...absExistentes, abSimulada];
 
-  const hayAhorro = res.optimizacion.some(o => o.esAhorro || o.cantBarras < (o.cantBarrasTotal - o.barrasAnteriores));
+  // Calcular con criterio seleccionado
+  const costos = calcularCostoAberturas(todasConNueva, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+  const cNueva = costos['__preview__'] || { perfiles: 0, vidrios: 0, herrajes: 0 };
 
-  const filas = res.optimizacion.map(o => {
-    const barrasNuevas = o.cantBarras;
-    const esAhorro = barrasNuevas === 0;
-    const colorCosto = esAhorro ? '#00E5A0' : 'var(--text)';
+  // También calcular vidrios de la nueva abertura
+  const resBase = calcularAbertura(linea, tipoId, W, H, params, state.perfiles, state.herrajes, pVid, precioKg, {});
+  const vidrios = resBase ? resBase.vidrios : [];
+  const costoVidrios = vidrios.reduce((s, v) => s + (v.ancho/1000)*(v.alto/1000)*pVid, 0);
+
+  // Obtener detalle de perfiles para mostrar
+  const cortesRaw = getCortesRaw(linea, tipoId, W, H, params, state.perfiles);
+  const perfilesFiltrados = state.perfiles.filter(pf => pf.linea_id === linea);
+  const perfilesUsados = [...new Set(cortesRaw.filter(c => c.perfil).map(c => c.perfil.codigo || c.perfil.id))];
+  const mmTotal = cortesRaw.filter(c => c.perfil).reduce((s, c) => s + c.largo * c.cantidad, 0);
+
+  const filas = perfilesUsados.map(k => {
+    const perfil = perfilesFiltrados.find(pf => pf.codigo === k || pf.id === k);
+    if (!perfil) return '';
+    const mmEste = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
+      .reduce((s, c) => s + c.largo * c.cantidad, 0);
+    const fraccion = mmTotal > 0 ? mmEste / mmTotal : 0;
+    const costoEste = cNueva.perfiles * fraccion;
+
+    // Verificar si aprovecha sobrante
+    const barrasExist = getBarrasExistentes(absExistentes, state.perfiles);
+    const barrasDeEste = barrasExist[k] || [];
+    const mmDisponible = barrasDeEste.reduce((s, b) => s + (b.resto || 0), 0);
+    const esAhorro = criterio === 'proporcional' && mmDisponible >= mmEste;
     const iconoAhorro = esAhorro ? '<span style="color:#00E5A0;font-size:10px;margin-left:6px;">✓ aprovecha sobrante</span>' : '';
+
     return `<div class="preview-row">
-      <span>${o.perfil.codigo ? '['+o.perfil.codigo+'] ' : ''}${o.perfil.nombre}${iconoAhorro}</span>
-      <span style="color:var(--text3)">${barrasNuevas} tira${barrasNuevas!==1?'s':''} nueva${barrasNuevas!==1?'s':''} × ${o.pesoTira}kg = ${(barrasNuevas*o.pesoTira).toFixed(2)}kg</span>
-      <span style="color:${colorCosto}">${fmt(o.costo)}</span>
+      <span>[${k}] ${perfil.nombre}${iconoAhorro}</span>
+      <span style="color:var(--text3)">${mmEste}mm</span>
+      <span style="color:${esAhorro?'#00E5A0':'var(--text)'}">${fmt(costoEste)}</span>
     </div>`;
   }).join('');
 
-  const vidFilas = res.vidrios.map(v => `
+  const vidFilas = vidrios.map(v => `
     <div class="preview-row">
       <span>${v.desc} (${v.ancho}x${v.alto}mm)</span>
       <span style="color:var(--text3)">${((v.ancho/1000)*(v.alto/1000)).toFixed(2)}m²</span>
       <span>${fmt((v.ancho/1000)*(v.alto/1000)*pVid)}</span>
     </div>`).join('');
 
-  const total = (res.costoPerfiles + res.costoVidrios + res.costoHerrajes) * cant;
-  const ahorroHtml = hayAhorro
-    ? `<div style="font-size:11px;color:#00E5A0;margin-top:6px;padding:6px 10px;background:#00E5A011;border-radius:6px;">
-        ✓ Algunas barras se aprovechan de aberturas anteriores del presupuesto
-       </div>`
-    : '';
+  const costoTotal = (cNueva.perfiles + costoVidrios + cNueva.herrajes) * cant;
+  const criterioLabel = criterio === 'proporcional' ? 'precio proporcional' : 'precio perfil completo';
 
   preview.innerHTML = `
     <div class="preview-box">
-      <div class="preview-title">Vista previa · ${fmt(precioKg)}/kg</div>
+      <div class="preview-title">Vista previa · ${fmt(precioKg)}/kg · ${criterioLabel}</div>
       ${filas}${vidFilas}
-      ${ahorroHtml}
-      <div class="preview-total"><span>Total x ${cant} u.</span><span>${fmt(total)}</span></div>
+      <div class="preview-total"><span>Total x ${cant} u.</span><span>${fmt(costoTotal)}</span></div>
     </div>`;
   if (btnAb) btnAb.disabled = false;
 }
