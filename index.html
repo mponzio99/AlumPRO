@@ -1533,19 +1533,55 @@ function renderDetalle() {
 // ============================================================
 function renderKanban() {
   const aprobados = state.presupuestos.filter(p => p.estado === 'aprobado' || p.kanban_col);
+  const colIdx = Object.fromEntries(KANBAN_COLS.map((c, i) => [c.id, i]));
+
   const cols = KANBAN_COLS.map(col => {
     const cards = aprobados.filter(p => (p.kanban_col || 'pendiente') === col.id);
     const cardHtml = cards.map(p => {
-      const siguientes = KANBAN_COLS.filter(c => c.id !== col.id).map(c =>
-        `<button onclick="moverKanban('${p.id}','${c.id}')">${c.label}</button>`).join('');
+      const colActualIdx = colIdx[col.id] ?? 0;
+      // Solo mostrar "avanzar" (siguiente columna) y opcionalmente retroceder
+      const colSiguiente = KANBAN_COLS[colActualIdx + 1];
+      const colAnterior  = KANBAN_COLS[colActualIdx - 1];
+
+      // Ícono especial para transiciones con lógica
+      const labelSig = col.id === 'pendiente'    ? '🛒 Pasar a Compra'
+                     : col.id === 'materiales'   ? '🔨 Pasar a Construcción'
+                     : colSiguiente               ? '→ ' + colSiguiente.label
+                     : null;
+
+      const btnAvanzar = colSiguiente
+        ? `<button onclick="moverKanban('${p.id}','${colSiguiente.id}')" style="background:${colSiguiente.color}22;color:${colSiguiente.color};border-color:${colSiguiente.color}44;font-weight:600;">${labelSig}</button>`
+        : '';
+      const btnRetroceder = colAnterior
+        ? `<button onclick="moverKanban('${p.id}','${colAnterior.id}')" style="font-size:10px;opacity:0.6;">← ${colAnterior.label}</button>`
+        : '';
+
+      // Indicador de stock para columna materiales
+      let stockIndicador = '';
+      if (col.id === 'materiales') {
+        const analisis = calcularNecesidadesMateriales(p);
+        const conStock = analisis.filter(a => a.stockUsado.length > 0).length;
+        const barrasComprar = analisis.reduce((s, a) => s + a.barrasNuevas.length, 0);
+        stockIndicador = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 4px;">
+          ${conStock > 0 ? `<span style="font-size:10px;padding:2px 8px;background:var(--accent)22;color:var(--accent);border-radius:10px;font-weight:700;">${conStock} del stock</span>` : ''}
+          ${barrasComprar > 0 ? `<span style="font-size:10px;padding:2px 8px;background:#FFB83022;color:#FFB830;border-radius:10px;font-weight:700;">${barrasComprar} a comprar</span>` : ''}
+          ${barrasComprar === 0 ? `<span style="font-size:10px;padding:2px 8px;background:var(--accent)22;color:var(--accent);border-radius:10px;font-weight:700;">✓ sin compras</span>` : ''}
+        </div>`;
+      }
+
       return `
       <div class="kanban-card">
         <div class="kanban-card-cliente">${p.cliente}</div>
         <div class="kanban-card-obra">${p.obra}</div>
         <div class="kanban-card-total">${fmt(p.total_final)}</div>
-        <div class="kanban-move">${siguientes}</div>
+        ${stockIndicador}
+        <div class="kanban-move">
+          ${btnAvanzar}
+          ${btnRetroceder}
+        </div>
       </div>`;
-    }).join('') || '';
+    }).join('') || `<div style="padding:20px 0;text-align:center;color:var(--text3);font-size:12px;">Sin obras</div>`;
+
     return `
     <div class="kanban-col">
       <div class="kanban-col-title" style="color:${col.color}">
@@ -1864,10 +1900,330 @@ async function actualizarMarkup(val) {
 async function moverKanban(id, col) {
   const p = state.presupuestos.find(x => x.id === id);
   if (!p) return;
+
+  // Transición a "Compra de materiales" → mostrar análisis de stock
+  if (col === 'materiales') {
+    return showModalAnalisisMateriales(p);
+  }
+
+  // Transición a "En construcción" → confirmar consumo/alta de sobrantes
+  if (col === 'construccion') {
+    return showModalConfirmarConstruccion(p);
+  }
+
+  // Resto de transiciones: inmediatas
+  await _ejecutarMoverKanban(p, col);
+}
+
+async function _ejecutarMoverKanban(p, col) {
   p.kanban_col = col;
-  await sheetsUpdateRow(SHEETS.presupuestos, id, { kanban_col: col });
+  await sheetsUpdateRow(SHEETS.presupuestos, p.id, { kanban_col: col });
   toast('Movido a ' + KANBAN_COLS.find(c => c.id === col)?.label);
   render();
+}
+
+// ============================================================
+// ANÁLISIS DE MATERIALES (transición → compra materiales)
+// ============================================================
+function calcularNecesidadesMateriales(p) {
+  const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
+  const precioKg = getPrecioKgPresupuesto(p);
+
+  // Agrupar mm necesarios por perfil en todo el presupuesto
+  const necesidades = {}; // { perfilCodigo: { perfil, piezas: [{largo, desc}], mmTotal } }
+  for (const a of abs) {
+    const params = tryParse(a.params, {});
+    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
+    for (const c of cortesRaw) {
+      if (!c.perfil) continue;
+      const k = c.perfil.codigo || c.perfil.id;
+      if (!necesidades[k]) necesidades[k] = { perfil: c.perfil, piezas: [], mmTotal: 0 };
+      for (let i = 0; i < c.cantidad; i++) {
+        necesidades[k].piezas.push({ largo: c.largo, desc: c.desc, abertura: a.nombre });
+      }
+      necesidades[k].mmTotal += c.largo * c.cantidad;
+    }
+  }
+
+  // Para cada perfil, cruzar con stock disponible
+  const resultado = [];
+  for (const [k, nec] of Object.entries(necesidades)) {
+    const stockDisponible = state.stock.filter(s =>
+      (s.perfil_id === nec.perfil.id || s.perfil_nombre?.includes('['+k+']') || s.perfil_nombre?.includes(nec.perfil.nombre))
+      && Number(s.largo_mm) > 50
+    );
+
+    // Simular bin packing usando sobrantes primero
+    const piezasOrdenadas = [...nec.piezas].sort((a, b) => b.largo - a.largo);
+    const barrasStock = stockDisponible.map(s => ({ stockId: s.id, largo_mm: Number(s.largo_mm), perfil_nombre: s.perfil_nombre, resto: Number(s.largo_mm), usado: false }));
+    const barrasNuevas = [];
+    const stockUsado = []; // { stockId, largo_mm, piezas }
+
+    const largoBarra = Number(nec.perfil.largo_barra) || 6000;
+
+    for (const pieza of piezasOrdenadas) {
+      let ok = false;
+      // Intentar en stock primero
+      for (const bs of barrasStock) {
+        if (!bs.usado && bs.resto >= pieza.largo) {
+          bs.resto -= pieza.largo;
+          const existing = stockUsado.find(u => u.stockId === bs.stockId);
+          if (existing) existing.piezas.push(pieza);
+          else stockUsado.push({ stockId: bs.stockId, largo_mm: bs.largo_mm, perfil_nombre: bs.perfil_nombre, piezas: [pieza], restoFinal: bs.resto });
+          ok = true;
+          break;
+        }
+      }
+      if (!ok) {
+        // Barra nueva
+        let barraActual = barrasNuevas[barrasNuevas.length - 1];
+        if (!barraActual || barraActual.resto < pieza.largo) {
+          barraActual = { largoBarra, resto: largoBarra, piezas: [], sobrante: 0 };
+          barrasNuevas.push(barraActual);
+        }
+        barraActual.resto -= pieza.largo;
+        barraActual.sobrante = barraActual.resto;
+        barraActual.piezas.push(pieza);
+      }
+    }
+
+    // Actualizar restoFinal en stockUsado
+    for (const su of stockUsado) {
+      const bs = barrasStock.find(b => b.stockId === su.stockId);
+      if (bs) su.restoFinal = bs.resto;
+    }
+
+    const costoKg = Number(nec.perfil.peso_tira || 0) * getPrecioKgPresupuesto(p);
+    const sobrantesNuevos = barrasNuevas
+      .filter(b => b.sobrante > 50)
+      .map(b => ({ perfil: nec.perfil, largo_mm: Math.round(b.sobrante) }));
+
+    resultado.push({
+      perfil: nec.perfil,
+      codigo: k,
+      mmTotal: nec.mmTotal,
+      piezasTotal: nec.piezas.length,
+      stockUsado,           // sobrantes del stock que se usan
+      barrasNuevas,         // barras a comprar
+      sobrantesNuevos,      // sobrantes que van a quedar de las barras nuevas
+      costoEstimado: barrasNuevas.length * costoKg,
+    });
+  }
+  return resultado;
+}
+
+function showModalAnalisisMateriales(p) {
+  const analisis = calcularNecesidadesMateriales(p);
+  const totalBarrasComprar = analisis.reduce((s, a) => s + a.barrasNuevas.length, 0);
+  const totalAhorro = analisis.filter(a => a.stockUsado.length > 0).length;
+
+  const filas = analisis.map((a, idx) => {
+    const stockHtml = a.stockUsado.length > 0
+      ? a.stockUsado.map(su => {
+          const usadoMm = su.largo_mm - su.restoFinal;
+          const otrosPresup = state.presupuestos.filter(pp =>
+            pp.id !== p.id && ['pendiente','materiales','construccion'].includes(pp.kanban_col)
+          );
+          const posibleConflicto = otrosPresup.some(() => false); // placeholder sin reservas formales
+          return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+            <span style="color:var(--accent);font-size:11px;">✓ STOCK</span>
+            <span style="font-size:12px;color:var(--text2)">${su.perfil_nombre}</span>
+            <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)">${su.largo_mm}mm → usa ${usadoMm}mm, queda ${su.restoFinal}mm</span>
+          </div>`;
+        }).join('')
+      : '';
+
+    const comprasHtml = a.barrasNuevas.length > 0
+      ? `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+          <span style="color:#FFB830;font-size:11px;">🛒 COMPRAR</span>
+          <span style="font-size:12px;color:var(--text2)">${a.barrasNuevas.length} barra${a.barrasNuevas.length!==1?'s':''} de ${(Number(a.perfil.largo_barra)||6000)/1000}m</span>
+          ${a.costoEstimado > 0 ? `<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text3)">≈ ${fmt(a.costoEstimado)}</span>` : ''}
+          ${a.sobrantesNuevos.length > 0 ? `<span style="font-size:11px;color:var(--text3);">→ genera ${a.sobrantesNuevos.length} sobrante${a.sobrantesNuevos.length!==1?'s':''}</span>` : ''}
+        </div>`
+      : '';
+
+    const hayInfo = stockHtml || comprasHtml;
+    return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:${hayInfo?'8':'0'}px;">
+        <span style="font-family:'DM Mono',monospace;color:var(--accent);font-size:12px;background:var(--accent)11;padding:2px 7px;border-radius:4px;">[${a.codigo}]</span>
+        <span style="font-weight:600;font-size:13px;">${a.perfil.nombre}</span>
+        <span style="font-size:11px;color:var(--text3);margin-left:auto;">${a.mmTotal}mm · ${a.piezasTotal} pieza${a.piezasTotal!==1?'s':''}</span>
+      </div>
+      ${stockHtml}${comprasHtml}
+    </div>`;
+  }).join('');
+
+  const resumen = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px;">
+    ${totalAhorro > 0 ? `<div style="background:var(--accent)11;border:1px solid var(--accent)33;border-radius:8px;padding:10px 16px;">
+      <div style="font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;">Del stock</div>
+      <div style="font-size:20px;font-weight:800;color:var(--accent);">${totalAhorro} perfil${totalAhorro!==1?'es':''}</div>
+      <div style="font-size:11px;color:var(--text3);">se aprovechan sobrantes</div>
+    </div>` : ''}
+    ${totalBarrasComprar > 0 ? `<div style="background:#FFB83011;border:1px solid #FFB83033;border-radius:8px;padding:10px 16px;">
+      <div style="font-size:11px;color:#FFB830;font-weight:700;text-transform:uppercase;">A comprar</div>
+      <div style="font-size:20px;font-weight:800;color:#FFB830;">${totalBarrasComprar} barra${totalBarrasComprar!==1?'s':''}</div>
+      <div style="font-size:11px;color:var(--text3);">de aluminio nuevo</div>
+    </div>` : ''}
+    ${totalBarrasComprar === 0 && totalAhorro > 0 ? `<div style="background:var(--accent)11;border:1px solid var(--accent)33;border-radius:8px;padding:10px 16px;">
+      <div style="font-size:13px;font-weight:700;color:var(--accent);">✓ Todo del stock — sin compras necesarias</div>
+    </div>` : ''}
+  </div>`;
+
+  showModal(`
+    <div class="modal-title">Análisis de materiales — ${p.cliente}</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:16px;">${p.obra}</div>
+    ${resumen}
+    <div style="max-height:340px;overflow-y:auto;margin-bottom:4px;">
+      ${filas}
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:18px;padding:8px 12px;background:var(--bg);border-radius:6px;">
+      ℹ️ Los sobrantes de stock no quedan reservados. Al pasar a construcción se confirmará qué se consume y qué sobrantes nuevos se generan.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="confirmarPasarAMateriales('${p.id}')">Confirmar → Compra materiales</button>
+    </div>`);
+}
+
+async function confirmarPasarAMateriales(presupuestoId) {
+  const p = state.presupuestos.find(x => x.id === presupuestoId);
+  if (!p) return;
+  closeModal();
+  await _ejecutarMoverKanban(p, 'materiales');
+}
+
+// ============================================================
+// CONFIRMAR CONSTRUCCIÓN (transición → construccion)
+// ============================================================
+function showModalConfirmarConstruccion(p) {
+  const analisis = calcularNecesidadesMateriales(p);
+
+  // Sobrantes de stock a consumir
+  const stockAConsumir = [];
+  for (const a of analisis) {
+    for (const su of a.stockUsado) {
+      stockAConsumir.push({ ...su, perfil: a.perfil, codigo: a.codigo });
+    }
+  }
+
+  // Sobrantes nuevos a generar
+  const sobrantesNuevos = [];
+  for (const a of analisis) {
+    for (const sn of a.sobrantesNuevos) {
+      sobrantesNuevos.push({ ...sn, codigo: a.codigo });
+    }
+  }
+
+  const consumirHtml = stockAConsumir.length > 0
+    ? stockAConsumir.map((su, i) => {
+        const usadoMm = su.largo_mm - su.restoFinal;
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;margin-bottom:6px;">
+          <input type="checkbox" id="consumir_${i}" checked style="accent-color:var(--accent);width:16px;height:16px;">
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:600;">${su.perfil_nombre || su.perfil.nombre}</div>
+            <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;">usa ${usadoMm}mm de ${su.largo_mm}mm disponibles ${su.restoFinal > 50 ? '→ queda '+su.restoFinal+'mm en stock' : '→ se consume completo'}</div>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--text3);font-size:13px;padding:8px 0;">Sin sobrantes de stock a consumir.</div>';
+
+  const sobrantesHtml = sobrantesNuevos.length > 0
+    ? sobrantesNuevos.map((sn, i) => {
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;margin-bottom:6px;">
+          <input type="checkbox" id="sobrante_nuevo_${i}" checked style="accent-color:var(--accent);width:16px;height:16px;">
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:600;">[${sn.codigo}] ${sn.perfil.nombre}</div>
+            <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;">${sn.largo_mm}mm de sobrante</div>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--text3);font-size:13px;padding:8px 0;">Las barras compradas no generan sobrantes significativos.</div>';
+
+  // Guardar análisis en window para usar al confirmar
+  window._kanbanAnalisis = { presupuestoId: p.id, stockAConsumir, sobrantesNuevos, presupuesto: p };
+
+  showModal(`
+    <div class="modal-title">Confirmar paso a Construcción</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:18px;">${p.cliente} — ${p.obra}</div>
+
+    <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.04em;">
+      📦 Sobrantes de stock a consumir
+    </div>
+    <div style="max-height:200px;overflow-y:auto;margin-bottom:18px;">${consumirHtml}</div>
+
+    <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.04em;">
+      ✨ Sobrantes nuevos a agregar al stock
+    </div>
+    <div style="max-height:200px;overflow-y:auto;margin-bottom:18px;">${sobrantesHtml}</div>
+
+    <div style="font-size:11px;color:var(--text3);padding:8px 12px;background:var(--bg);border-radius:6px;margin-bottom:18px;">
+      ⚠️ Esta acción modifica el stock. Los sobrantes marcados se eliminarán/agregarán al confirmar.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" id="btnConfirmarConstruccion" onclick="confirmarPasarAConstruccion()">Confirmar y actualizar stock</button>
+    </div>`);
+}
+
+async function confirmarPasarAConstruccion() {
+  const btn = document.getElementById('btnConfirmarConstruccion');
+  setBtnLoading(btn, true, 'Actualizando...');
+  try {
+    const { presupuestoId, stockAConsumir, sobrantesNuevos, presupuesto: p } = window._kanbanAnalisis;
+
+    // 1. Eliminar del stock los sobrantes marcados para consumir
+    for (let i = 0; i < stockAConsumir.length; i++) {
+      const checked = document.getElementById('consumir_' + i)?.checked;
+      if (!checked) continue;
+      const su = stockAConsumir[i];
+      // Eliminar el sobrante original del stock
+      state.stock = state.stock.filter(s => s.id !== su.stockId);
+      await sheetsDeleteRow(SHEETS.stock, su.stockId);
+      // Si quedó un resto significativo, lo volvemos a agregar como sobrante nuevo
+      if (su.restoFinal > 50) {
+        const linea = state.lineas.find(l => l.id === su.perfil?.linea_id) || {};
+        const nuevoSobrante = {
+          id: genId(),
+          perfil_id: su.perfil?.id || '',
+          perfil_nombre: su.perfil_nombre || su.perfil?.nombre || '',
+          linea: linea.nombre || '',
+          largo_mm: su.restoFinal,
+          nota: 'Resto de sobrante usado en ' + p.cliente + ' — ' + p.obra,
+          fecha: today(),
+        };
+        state.stock.push(nuevoSobrante);
+        await sheetsAppend(SHEETS.stock, nuevoSobrante);
+      }
+    }
+
+    // 2. Agregar al stock los sobrantes nuevos marcados
+    for (let i = 0; i < sobrantesNuevos.length; i++) {
+      const checked = document.getElementById('sobrante_nuevo_' + i)?.checked;
+      if (!checked) continue;
+      const sn = sobrantesNuevos[i];
+      const linea = state.lineas.find(l => l.id === sn.perfil?.linea_id) || {};
+      const s = {
+        id: genId(),
+        perfil_id: sn.perfil?.id || '',
+        perfil_nombre: sn.perfil?.nombre + (sn.codigo ? ' [' + sn.codigo + ']' : ''),
+        linea: linea.nombre || '',
+        largo_mm: sn.largo_mm,
+        nota: 'Sobrante de obra: ' + p.cliente + ' — ' + p.obra,
+        fecha: today(),
+      };
+      state.stock.push(s);
+      await sheetsAppend(SHEETS.stock, s);
+    }
+
+    closeModal();
+    const pp = state.presupuestos.find(x => x.id === presupuestoId);
+    await _ejecutarMoverKanban(pp, 'construccion');
+    toast('Stock actualizado y obra en construcción ✓');
+  } catch(e) {
+    console.error(e);
+    toast('Error al actualizar stock', 'error');
+    setBtnLoading(btn, false);
+  }
 }
 
 async function eliminarAbertura(id) {
@@ -2251,12 +2607,6 @@ async function confirmarAgregarAbertura() {
     state.aberturas.push(ab);
     await sheetsAppend(SHEETS.aberturas, ab);
 
-    const todasAbs = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
-    const costosConSobrantes = calcularCostoAberturas(
-      todasAbs, state.perfiles, state.herrajes, precioKg,
-      'proporcional', state.umbral_sobrante
-    );
-    await agregarSobrantesAStock(costosConSobrantes, [ab]);
     await recalcularTotal();
     closeModal();
     toast('Abertura agregada');
