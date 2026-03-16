@@ -1224,8 +1224,7 @@ function renderDetalle() {
 
     const criterioOpts = [
       { id: 'proporcional',   label: 'Precio proporcional al uso' },
-      { id: 'barra_completa', label: 'Precio barra completa' },
-      { id: 'barras_nuevas',  label: 'Solo barras nuevas (original)' },
+      { id: 'barra_completa', label: 'Precio perfil completo' },
     ].map(o => `<option value="${o.id}" ${criterio===o.id?'selected':''}>${o.label}</option>`).join('');
 
     tabContent = `
@@ -1239,19 +1238,16 @@ function renderDetalle() {
   }
 
   if (tab === 'calculo') {
-    // Recalcular bin packing completo del presupuesto para mostrar estado real de barras
     const pres = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKg = getPrecioKgPresupuesto(pres);
-    
-    // Consolidar recalculando desde cero en orden
-    const consolidado = {};
+    const criterio = state._criterioPrecio || 'proporcional';
+
+    // Recalcular bin packing consolidado para detalle de barras
     let barrasAcum = {};
-    
     for (const a of abs) {
       const params = tryParse(a.params, {});
       const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
       const perfilesFiltrados = state.perfiles.filter(pf => pf.linea_id === a.linea_id);
-      
       const agrupados = {};
       for (const c of cortesRaw) {
         if (!c.perfil) continue;
@@ -1259,36 +1255,35 @@ function renderDetalle() {
         if (!agrupados[key]) agrupados[key] = [];
         agrupados[key].push({ largo: c.largo, cantidad: c.cantidad, desc: c.desc });
       }
-      
-      const { resultado, barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
+      const { barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
       barrasAcum = barrasFinales;
-      
-      for (const opt of resultado) {
-        const perfil = opt.perfil || {};
-        const k = perfil.id || perfil.codigo || 'desconocido';
-        const nombre = perfil.nombre || perfil.codigo || k;
-        const codigo = perfil.codigo || '';
-        const largoBarra = Number(perfil.largo_barra || 6000);
-        if (!consolidado[k]) consolidado[k] = { nombre, codigo, barras: 0, costo: 0, costoPorBarra: opt.costoPorBarra, largoBarra, detalleBarras: [] };
-        consolidado[k].barras += opt.cantBarras;
-        consolidado[k].costo += opt.costo;
-        // Agregar barras nuevas de esta abertura al detalle
-        (opt.barras || []).forEach(b => {
-          consolidado[k].detalleBarras.push({
-            barra: consolidado[k].detalleBarras.length + 1,
-            piezas: b.piezas || [],
-            resto: b.resto,
-            abertura: a.nombre,
-            largoBarra,
-          });
-        });
+    }
+
+    // Calcular costos según criterio para mostrar en consolidado
+    const costosMat = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+    const costoPorPerfil = {}; // k -> costo total según criterio
+    for (const a of abs) {
+      const params = tryParse(a.params, {});
+      const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
+      for (const c of cortesRaw) {
+        if (!c.perfil) continue;
+        const k = c.perfil.codigo || c.perfil.id;
+        if (!costoPorPerfil[k]) costoPorPerfil[k] = 0;
       }
     }
-    
-    // Agregar piezas que entraron en barras de aberturas anteriores
-    // Recorrer barrasAcum final para actualizar piezas en detalleBarras
-    // (ya están incluidas porque optimizarCortesConSobrantes mutó las barras existentes)
-    // Actualizar detalleBarras con estado final de todas las barras
+    // Distribuir costos de perfiles por perfil key
+    for (const a of abs) {
+      const params = tryParse(a.params, {});
+      const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
+      const mmEsta = {};
+      for (const c of cortesRaw) {
+        if (!c.perfil) continue;
+        const k = c.perfil.codigo || c.perfil.id;
+        mmEsta[k] = (mmEsta[k] || 0) + c.largo * c.cantidad;
+      }
+    }
+
+    // Construir consolidadoFinal con costo según criterio
     const consolidadoFinal = {};
     for (const [k, barras] of Object.entries(barrasAcum)) {
       const perfil = state.perfiles.find(p => p.codigo === k || p.id === k);
@@ -1297,10 +1292,33 @@ function renderDetalle() {
       const codigo = perfil.codigo || '';
       const largoBarra = Number(perfil.largo_barra || 6000);
       const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
+      // Costo según criterio = suma de lo que pagan todas las aberturas por este perfil
+      let costoSegunCriterio = 0;
+      for (const a of abs) {
+        const params = tryParse(a.params, {});
+        const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
+        const usaEstePerfil = cortesRaw.some(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k));
+        if (!usaEstePerfil) continue;
+        const cAb = costosMat[a.id];
+        if (!cAb) continue;
+        // Calcular qué fracción del costo de perfiles corresponde a este perfil
+        const mmTotalAb = Object.values(
+          cortesRaw.filter(c => c.perfil).reduce((acc, c) => {
+            const ck = c.perfil.codigo || c.perfil.id;
+            acc[ck] = (acc[ck] || 0) + c.largo * c.cantidad;
+            return acc;
+          }, {})
+        ).reduce((s, v) => s + v, 0);
+        const mmEstePerfil = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
+          .reduce((s, c) => s + c.largo * c.cantidad, 0);
+        const fraccion = mmTotalAb > 0 ? mmEstePerfil / mmTotalAb : 0;
+        costoSegunCriterio += cAb.perfiles * fraccion;
+      }
+
       consolidadoFinal[k] = {
         nombre, codigo, largoBarra, costoPorBarra,
         barras: barras.length,
-        costo: barras.length * costoPorBarra,
+        costo: costoSegunCriterio,
         detalleBarras: barras.map((b, i) => ({
           barra: i + 1,
           piezas: b.piezas || [],
@@ -1311,11 +1329,15 @@ function renderDetalle() {
       };
     }
 
+    const criterioOpts = [
+      { id: 'proporcional',   label: 'Precio proporcional al uso' },
+      { id: 'barra_completa', label: 'Precio perfil completo' },
+    ].map(o => `<option value="${o.id}" ${criterio===o.id?'selected':''}>${o.label}</option>`).join('');
+
     const tieneConsolidado = Object.keys(consolidadoFinal).length > 0;
 
     const matRows = tieneConsolidado
       ? Object.entries(consolidadoFinal).map(([k, m]) => {
-          // Detalle de barras expandible
           const rowId = 'mr_' + k.replace(/[^a-zA-Z0-9]/g, '_');
           const barrasHtml = m.detalleBarras.map(b => {
             const piezasHtml = (b.piezas || []).map(pz =>
@@ -1327,19 +1349,19 @@ function renderDetalle() {
             const usadoMm = m.largoBarra - (b.resto || 0);
             const pct = Math.round((usadoMm / m.largoBarra) * 100);
             const colorBarra = pct > 90 ? 'var(--accent)' : pct > 70 ? '#FFB830' : '#FF4D6A';
+            const esSobrante = (b.resto || 0) / m.largoBarra * 100 > state.umbral_sobrante;
             return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-top:6px;">'
               + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
                 + '<span style="font-size:11px;font-weight:700;color:var(--text3)">BARRA ' + b.barra + '</span>'
                 + '<span style="font-size:11px;font-family:\'DM Mono\',monospace;color:'+colorBarra+'">'
                   + usadoMm + '/' + m.largoBarra + 'mm · resto: ' + (b.resto||0) + 'mm · ' + pct + '%'
+                  + (esSobrante ? ' <span style="color:#00E5A0;font-size:10px;">→ stock</span>' : '')
                 + '</span>'
               + '</div>'
-              // Barra visual
               + '<div style="height:8px;background:var(--border);border-radius:4px;margin-bottom:8px;overflow:hidden;">'
-                + '<div style="height:100%;width:'+pct+'%;background:'+colorBarra+';border-radius:4px;transition:width 0.3s;"></div>'
+                + '<div style="height:100%;width:'+pct+'%;background:'+colorBarra+';border-radius:4px;"></div>'
               + '</div>'
               + piezasHtml
-              + '<div style="font-size:10px;color:var(--text3);margin-top:4px;">← '+b.abertura+'</div>'
             + '</div>';
           }).join('');
 
@@ -1358,19 +1380,26 @@ function renderDetalle() {
             + '<div id="'+rowId+'" style="display:none;">' + barrasHtml + '</div>'
           + '</div>';
         }).join('')
-      : '<div style="color:var(--text3);padding:24px;text-align:center;border:1px dashed var(--border2);border-radius:8px">Sin datos de materiales. Agregá aberturas al presupuesto primero.</div>';
+      : '<div style="color:var(--text3);padding:24px;text-align:center;border:1px dashed var(--border2);border-radius:8px">Sin datos. Agregá aberturas primero.</div>';
 
     const detalle = abs.map(a => {
-      const opts = Array.isArray(a.optimizacion) ? a.optimizacion : [];
-      const filas = opts.map(opt => {
-        const perfil = opt.perfil || {};
-        const nombre = perfil.nombre || perfil.codigo || opt.perfil_nombre || '-';
-        const codigo = perfil.codigo || '';
-        const cantBarras = Number(opt.cantBarras || opt.cant_barras || 0);
+      const cAb = costosMat[a.id] || {};
+      const params = tryParse(a.params, {});
+      const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
+      const perfilesFiltrados = state.perfiles.filter(pf => pf.linea_id === a.linea_id);
+      const perfilesUsados = [...new Set(cortesRaw.filter(c => c.perfil).map(c => c.perfil.codigo || c.perfil.id))];
+      const filas = perfilesUsados.map(k => {
+        const perfil = perfilesFiltrados.find(p => p.codigo === k || p.id === k);
+        if (!perfil) return '';
+        const mmAb = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
+          .reduce((s, c) => s + c.largo * c.cantidad, 0);
+        const mmTotalAb = cortesRaw.filter(c => c.perfil).reduce((s, c) => s + c.largo * c.cantidad, 0);
+        const fraccion = mmTotalAb > 0 ? mmAb / mmTotalAb : 0;
+        const costoEste = (cAb.perfiles || 0) * fraccion;
         return '<div class="preview-row">'
-          + '<span>' + (codigo ? '['+codigo+'] ' : '') + nombre + '</span>'
-          + '<span style="color:var(--text3)">' + cantBarras + ' barra' + (cantBarras!==1?'s':'') + '</span>'
-          + '<span>' + fmt(Number(opt.costo||0)) + '</span>'
+          + '<span>['+k+'] ' + perfil.nombre + '</span>'
+          + '<span style="color:var(--text3)">' + mmAb + 'mm usados</span>'
+          + '<span>' + fmt(costoEste) + '</span>'
           + '</div>';
       }).join('');
       const vidrioFilas = (tryParse(a.vidrios, []) || []).map(v =>
@@ -1380,17 +1409,19 @@ function renderDetalle() {
         + '<span>' + fmt((v.ancho/1000)*(v.alto/1000)*Number(a.precio_vidrio||8500)) + '</span>'
         + '</div>'
       ).join('');
-      const vidrios = tryParse(a.vidrios, []) || [];
-      const sinDatos = !opts.length && !vidrios.length;
       return '<div style="margin-bottom:18px">'
         + '<div style="font-size:13px;font-weight:700;color:var(--text3);background:var(--bg);padding:8px 12px;border-radius:7px;margin-bottom:6px">'
           + a.nombre + ' — ' + a.ancho + 'x' + a.alto + 'mm x ' + a.cantidad + ' u.'
         + '</div>'
-        + (sinDatos ? '<div style="color:var(--text3);font-size:12px;padding:6px 12px">Sin detalle guardado</div>' : filas + vidrioFilas)
+        + filas + vidrioFilas
         + '</div>';
     }).join('');
 
     tabContent = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+        <span style="font-size:13px;color:var(--text2);font-weight:600;">Criterio de precio:</span>
+        <select style="flex:1;max-width:280px;" onchange="setCriterioPrecio(this.value)">${criterioOpts}</select>
+      </div>
       <h3 style="font-size:14px;font-weight:700;color:var(--text2);margin-bottom:14px;text-transform:uppercase;letter-spacing:0.05em">Materiales consolidados — click para ver cortes por barra</h3>
       ${matRows}
       <h3 style="font-size:14px;font-weight:700;color:var(--text2);margin:24px 0 14px;text-transform:uppercase;letter-spacing:0.05em">Detalle por abertura</h3>
@@ -1410,8 +1441,7 @@ function renderDetalle() {
 
     const criterioOpts2 = [
       { id: 'proporcional',   label: 'Precio proporcional al uso' },
-      { id: 'barra_completa', label: 'Precio barra completa' },
-      { id: 'barras_nuevas',  label: 'Solo barras nuevas (original)' },
+      { id: 'barra_completa', label: 'Precio perfil completo' },
     ].map(o => `<option value="${o.id}" ${criterioR===o.id?'selected':''}>${o.label}</option>`).join('');
 
     tabContent = `
