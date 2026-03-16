@@ -719,7 +719,137 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
 }
 
 // ============================================================
-// CONFIGURACIÓN DE TIPOLOGÍAS (holguras y perfiles editables)
+// CÁLCULO DE PRECIO PROPORCIONAL POR ABERTURA
+// criterio: 'proporcional' | 'barra_completa' | 'barras_nuevas'
+// ============================================================
+function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio) {
+  criterio = criterio || 'proporcional';
+
+  // Recalcular bin packing completo acumulando barras
+  let barrasAcum = {};
+  const resultados = []; // { ab, optimizacion, vidrios, herrajesDetalle }
+
+  for (const a of abs) {
+    const params = tryParse(a.params, {});
+    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
+    const perfilesFiltrados = perfilesDB.filter(pf => pf.linea_id === a.linea_id);
+    const agrupados = {};
+    for (const c of cortesRaw) {
+      if (!c.perfil) continue;
+      const key = c.perfil.codigo || c.perfil.id;
+      if (!agrupados[key]) agrupados[key] = [];
+      agrupados[key].push({ largo: c.largo, cantidad: c.cantidad, desc: c.desc });
+    }
+    const { resultado, barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
+    barrasAcum = barrasFinales;
+
+    // Desglose herrajes
+    const tipo = (TIPOS_ABERTURA[a.linea_id] || []).find(t => t.id === a.tipo_id);
+    const herrajesCalc = tipo ? tipo.herrajes(params) : [];
+    const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
+    const herrajesDetalle = herrajesCalc.map(h => {
+      const hObj = herrajesFiltrados.find(x => x.id === h.id);
+      return {
+        nombre: hObj?.nombre || h.id,
+        cantidad: h.cantidad,
+        precioUnit: Number(hObj?.precio || 0),
+        unidad: hObj?.unidad || 'u',
+        subtotal: Number(hObj?.precio || 0) * h.cantidad,
+        desc: h.desc,
+      };
+    });
+
+    resultados.push({ ab: a, optimizacion: resultado, herrajesDetalle, barrasSnapshot: JSON.parse(JSON.stringify(barrasAcum)) });
+  }
+
+  // Ahora calcular costos según criterio
+  const costos = {}; // ab.id -> { perfiles, vidrios, herrajes, total }
+
+  if (criterio === 'barras_nuevas') {
+    // Criterio original: paga quien abrió la barra
+    for (const r of resultados) {
+      const costoP = r.optimizacion.reduce((s, o) => s + o.costo, 0);
+      const costoV = (tryParse(r.ab.vidrios, []) || []).reduce((s, v) =>
+        s + (v.ancho/1000)*(v.alto/1000)*Number(r.ab.precio_vidrio||8500), 0);
+      const costoH = r.herrajesDetalle.reduce((s, h) => s + h.subtotal, 0);
+      costos[r.ab.id] = { perfiles: costoP, vidrios: costoV, herrajes: costoH, herrajesDetalle: r.herrajesDetalle };
+    }
+  } else {
+    // Para proporcional y barra_completa necesitamos saber cuánto usa cada abertura de cada barra
+    // Reconstruir asignación: por cada barra, qué piezas son de qué abertura
+    // Usamos los snapshots de barrasAcum al final (todas las barras con todas las piezas)
+
+    // Construir mapa: perfilKey -> barra[] con piezas etiquetadas por abertura
+    // Para esto necesitamos rastrear qué piezas pertenecen a qué abertura
+    // Lo hacemos desde los cortesRaw de cada abertura vs las barras finales
+
+    // Enfoque: calcular mm usados por cada abertura en cada perfil
+    const mmPorAberturaPorPerfil = {}; // { abId: { perfilKey: mmUsados } }
+    for (const r of resultados) {
+      mmPorAberturaPorPerfil[r.ab.id] = {};
+      for (const opt of r.optimizacion) {
+        const k = opt.perfil.codigo || opt.perfil.id;
+        // Sumar mm de todas las piezas de esta abertura en este perfil
+        const mm = (opt.barras || []).reduce((s, b) =>
+          s + (b.piezas || []).reduce((s2, pz) => s2 + Number(pz.largo || 0), 0), 0);
+        // También incluir piezas que entraron en barras anteriores (esAhorro)
+        // Para eso miramos los cortesRaw
+        const params = tryParse(r.ab.params, {});
+        const cortesRaw = getCortesRaw(r.ab.linea_id, r.ab.tipo_id, Number(r.ab.ancho), Number(r.ab.alto), params, perfilesDB);
+        const mmTotal = cortesRaw
+          .filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
+          .reduce((s, c) => s + c.largo * c.cantidad, 0);
+        mmPorAberturaPorPerfil[r.ab.id][k] = mmTotal;
+      }
+    }
+
+    // Para cada perfil, calcular costo total de las barras y distribuir
+    for (const r of resultados) {
+      let costoP = 0;
+      const params = tryParse(r.ab.params, {});
+      const cortesRaw = getCortesRaw(r.ab.linea_id, r.ab.tipo_id, Number(r.ab.ancho), Number(r.ab.alto), params, perfilesDB);
+      const perfilesFiltrados = perfilesDB.filter(pf => pf.linea_id === r.ab.linea_id);
+
+      // Agrupar perfiles usados por esta abertura
+      const perfilesUsados = [...new Set(cortesRaw.filter(c => c.perfil).map(c => c.perfil.codigo || c.perfil.id))];
+
+      for (const k of perfilesUsados) {
+        const perfil = perfilesFiltrados.find(p => p.codigo === k || p.id === k);
+        if (!perfil) continue;
+        const barrasFinales = barrasAcum[k] || [];
+        const largoBarra = Number(perfil.largo_barra || 6000);
+        const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
+        const costoTotalPerfil = barrasFinales.length * costoPorBarra;
+
+        const mmEstaAbertura = mmPorAberturaPorPerfil[r.ab.id]?.[k] || 0;
+        const mmTotalTodasAberturas = Object.values(mmPorAberturaPorPerfil).reduce((s, m) => s + (m[k] || 0), 0);
+        const mmTotalBarras = barrasFinales.length * largoBarra;
+
+        if (criterio === 'proporcional') {
+          // Paga proporción de mm usados (incluyendo desperdicio proporcional)
+          const fraccion = mmTotalTodasAberturas > 0 ? mmEstaAbertura / mmTotalTodasAberturas : 0;
+          costoP += costoTotalPerfil * fraccion;
+        } else { // barra_completa
+          // Paga una barra completa por cada barra que tiene piezas suyas
+          const barrasConPiezas = barrasFinales.filter(b =>
+            (b.piezas || []).some(pz => pz._abId === r.ab.id)
+          ).length;
+          // Como no tenemos _abId, usamos las barras nuevas de esta abertura
+          costoP += r.optimizacion.filter(o => (o.perfil.codigo||o.perfil.id) === k)
+            .reduce((s, o) => s + o.cantBarras * costoPorBarra, 0);
+        }
+      }
+
+      const costoV = (tryParse(r.ab.vidrios, []) || []).reduce((s, v) =>
+        s + (v.ancho/1000)*(v.alto/1000)*Number(r.ab.precio_vidrio||8500), 0);
+      const costoH = r.herrajesDetalle.reduce((s, h) => s + h.subtotal, 0);
+      costos[r.ab.id] = { perfiles: costoP, vidrios: costoV, herrajes: costoH, herrajesDetalle: r.herrajesDetalle };
+    }
+  }
+
+  return costos;
+}
+
 // Estructura: { linea_id: { tipo_id: { perfiles: [...], vidrio: {...} } } }
 // ============================================================
 const CONFIG_TIPOLOGIAS_DEFAULT = {
@@ -889,6 +1019,11 @@ function setLoading(v) { state.loading = v; }
 // ============================================================
 // RENDER PRINCIPAL
 // ============================================================
+function setCriterioPrecio(valor) {
+  state._criterioPrecio = valor;
+  render();
+}
+
 function attachEvents() {}
 
 function render() {
@@ -968,21 +1103,68 @@ function renderDetalle() {
 
   let tabContent = '';
   if (tab === 'aberturas') {
+    const pres = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+    const precioKg = getPrecioKgPresupuesto(pres);
+    const criterio = state._criterioPrecio || 'proporcional';
+    const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio);
+
     const abCards = abs.map((a, idx) => {
-      const cTotal = Number(a.costo_perfiles||0)+Number(a.costo_vidrios||0)+Number(a.costo_herrajes||0);
+      const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0, herrajesDetalle: [] };
+      const cTotal = (c.perfiles + c.vidrios + c.herrajes) * Number(a.cantidad);
+      const herrajesHtml = (c.herrajesDetalle || []).map(h =>
+        `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);padding:2px 0;">
+          <span>${h.nombre} × ${h.cantidad} ${h.unidad}</span>
+          <span style="font-family:'DM Mono',monospace;">${fmt(h.subtotal)}</span>
+        </div>`
+      ).join('');
+
       return `
-      <div class="ab-card">
-        <div style="flex:1">
-          <div class="ab-nombre">${a.nombre}</div>
-          <div class="ab-meta">${a.ancho}x${a.alto} mm · ${a.cantidad} u. · ${a.linea}</div>
+      <div class="ab-card" style="flex-direction:column;gap:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="flex:1">
+            <div class="ab-nombre">${a.nombre}</div>
+            <div class="ab-meta">${a.ancho}x${a.alto} mm · ${a.cantidad} u. · ${a.linea}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="ab-costo">${fmt(cTotal)}</div>
+            <button class="btn-danger" style="margin-top:6px" onclick="eliminarAbertura('${a.id}')">✕ Eliminar</button>
+          </div>
         </div>
-        <div style="text-align:right">
-          <div class="ab-costo">${fmt(cTotal * Number(a.cantidad))}</div>
-          <button class="btn-danger" style="margin-top:6px" onclick="eliminarAbertura('${a.id}')">✕ Eliminar</button>
+        <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;gap:24px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:160px;">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Desglose</div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;">
+              <span>Perfiles aluminio</span>
+              <span style="font-family:'DM Mono',monospace;">${fmt(c.perfiles * Number(a.cantidad))}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;">
+              <span>Vidrios</span>
+              <span style="font-family:'DM Mono',monospace;">${fmt(c.vidrios * Number(a.cantidad))}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;">
+              <span>Herrajes</span>
+              <span style="font-family:'DM Mono',monospace;">${fmt(c.herrajes * Number(a.cantidad))}</span>
+            </div>
+          </div>
+          ${herrajesHtml ? `<div style="flex:1;min-width:180px;">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Herrajes detalle</div>
+            ${herrajesHtml}
+          </div>` : ''}
         </div>
       </div>`;
     }).join('');
+
+    const criterioOpts = [
+      { id: 'proporcional',   label: 'Precio proporcional al uso' },
+      { id: 'barra_completa', label: 'Precio barra completa' },
+      { id: 'barras_nuevas',  label: 'Solo barras nuevas (original)' },
+    ].map(o => `<option value="${o.id}" ${criterio===o.id?'selected':''}>${o.label}</option>`).join('');
+
     tabContent = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+        <span style="font-size:13px;color:var(--text2);font-weight:600;">Criterio de precio:</span>
+        <select style="flex:1;max-width:280px;" onchange="setCriterioPrecio(this.value)">${criterioOpts}</select>
+      </div>
       ${abCards}
       <div id="addAbWrap"></div>
       <button class="btn-add-ab" onclick="showAddAbertura()">+ Agregar abertura</button>`;
@@ -1148,15 +1330,35 @@ function renderDetalle() {
   }
 
   if (tab === 'resumen') {
+    const presR = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+    const precioKgR = getPrecioKgPresupuesto(presR);
+    const criterioR = state._criterioPrecio || 'proporcional';
+    const costosR = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgR, criterioR);
+    const costoPR = Object.values(costosR).reduce((s, c) => s + c.perfiles * 1, 0);
+    const costoVR = Object.values(costosR).reduce((s, c) => s + c.vidrios * 1, 0);
+    const costoHR = Object.values(costosR).reduce((s, c) => s + c.herrajes * 1, 0);
+    const subtotalR = costoPR + costoVR + costoHR;
+    const totalFinalR = subtotalR * (1 + markup / 100);
+
+    const criterioOpts2 = [
+      { id: 'proporcional',   label: 'Precio proporcional al uso' },
+      { id: 'barra_completa', label: 'Precio barra completa' },
+      { id: 'barras_nuevas',  label: 'Solo barras nuevas (original)' },
+    ].map(o => `<option value="${o.id}" ${criterioR===o.id?'selected':''}>${o.label}</option>`).join('');
+
     tabContent = `
-      <div style="max-width:480px">
+      <div style="max-width:520px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+          <span style="font-size:13px;color:var(--text2);font-weight:600;white-space:nowrap;">Criterio:</span>
+          <select style="flex:1;" onchange="setCriterioPrecio(this.value)">${criterioOpts2}</select>
+        </div>
         <div class="card">
           <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:18px">Resumen de costos</div>
-          <div class="resumen-row"><span>Perfiles de aluminio</span><span style="font-family:'DM Mono',monospace">${fmt(costoP)}</span></div>
-          <div class="resumen-row"><span>Vidrios</span><span style="font-family:'DM Mono',monospace">${fmt(costoV)}</span></div>
-          <div class="resumen-row"><span>Herrajes</span><span style="font-family:'DM Mono',monospace">${fmt(costoH)}</span></div>
+          <div class="resumen-row"><span>Perfiles de aluminio</span><span style="font-family:'DM Mono',monospace">${fmt(costoPR)}</span></div>
+          <div class="resumen-row"><span>Vidrios</span><span style="font-family:'DM Mono',monospace">${fmt(costoVR)}</span></div>
+          <div class="resumen-row"><span>Herrajes</span><span style="font-family:'DM Mono',monospace">${fmt(costoHR)}</span></div>
           <div class="resumen-row" style="font-weight:700;border-top:1px solid var(--border2);margin-top:8px;padding-top:14px">
-            <span>Subtotal materiales</span><span style="font-family:'DM Mono',monospace">${fmt(subtotal)}</span>
+            <span>Subtotal materiales</span><span style="font-family:'DM Mono',monospace">${fmt(subtotalR)}</span>
           </div>
           <div style="margin-top:18px;display:flex;align-items:center;gap:16px">
             <label style="white-space:nowrap">Markup / Ganancia (%)</label>
@@ -1164,7 +1366,7 @@ function renderDetalle() {
           </div>
           <div class="total-final">
             <span>TOTAL FINAL</span>
-            <span>${fmt(totalFinal)}</span>
+            <span>${fmt(totalFinalR)}</span>
           </div>
         </div>
       </div>`;
