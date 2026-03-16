@@ -2576,7 +2576,8 @@ function imprimirPresupuesto(id) {
   const aberturasHtml = abs.map((a, i) => {
     const svg = svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180);
     const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0 };
-    const precioUnitario = c.perfiles + c.vidrios + c.herrajes;
+    const precioUnitarioSinMarkup = c.perfiles + c.vidrios + c.herrajes;
+    const precioUnitario = precioUnitarioSinMarkup * (1 + markup / 100);
     const precioTotal = precioUnitario * Number(a.cantidad);
     return `
       <div style="display:flex;align-items:center;gap:24px;padding:18px 0;border-bottom:1px solid #e2e8f0;break-inside:avoid;">
