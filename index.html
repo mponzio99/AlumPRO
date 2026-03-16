@@ -748,16 +748,12 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
 // ============================================================
 // CÁLCULO DE PRECIO POR ABERTURA
 // criterio: 'proporcional' | 'barra_completa'
-// Lógica proporcional:
-//   precio_por_mm = costo_barra / largo_barra
-//   si sobrante <= umbral%: se cobra barra entera distribuida entre quienes usan esa barra
-//   si sobrante > umbral%: cada abertura paga solo sus mm × precio_por_mm
 // ============================================================
 function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio, umbralSobrante) {
   criterio = criterio || 'proporcional';
   umbralSobrante = umbralSobrante !== undefined ? Number(umbralSobrante) : 20;
 
-  // Paso 1: bin packing consolidado para obtener estado final de todas las barras
+  // Paso 1: bin packing consolidado
   let barrasAcum = {};
   const herrajesDetalleMap = {};
 
@@ -770,7 +766,7 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
       if (!c.perfil) continue;
       const key = c.perfil.codigo || c.perfil.id;
       if (!agrupados[key]) agrupados[key] = [];
-      agrupados[key].push({ largo: c.largo, cantidad: c.cantidad, desc: c.desc, _abId: a.id });
+      agrupados[key].push({ largo: c.largo, cantidad: c.cantidad, desc: c.desc });
     }
     const { barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
     barrasAcum = barrasFinales;
@@ -792,8 +788,8 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
     });
   }
 
-  // Paso 2: calcular mm usados por cada abertura en cada perfil
-  const mmPorAb = {}; // { abId: { perfilKey: mmUsados } }
+  // Paso 2: mm usados por abertura por perfil
+  const mmPorAb = {};
   for (const a of abs) {
     const params = tryParse(a.params, {});
     const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
@@ -805,20 +801,25 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
     }
   }
 
-  // Inicializar costos
+  // Paso 3: inicializar costos con desglose por perfil
   const costos = {};
   for (const a of abs) {
-    costos[a.id] = { perfiles: 0, vidrios: 0, herrajes: 0, herrajesDetalle: herrajesDetalleMap[a.id] || [], sobrantesAStock: [] };
+    costos[a.id] = {
+      perfiles: 0,
+      perfilesPorCodigo: {}, // { perfilKey: costo }
+      vidrios: 0,
+      herrajes: 0,
+      herrajesDetalle: herrajesDetalleMap[a.id] || [],
+      sobrantesAStock: []
+    };
   }
 
   if (criterio === 'barra_completa') {
-    // Cada abertura paga las barras completas que necesitaría sola (sin compartir)
     for (const a of abs) {
       const perfilesFiltrados = perfilesDB.filter(pf => pf.linea_id === a.linea_id);
       const params = tryParse(a.params, {});
       const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
       const perfilesUsados = [...new Set(cortesRaw.filter(c => c.perfil).map(c => c.perfil.codigo || c.perfil.id))];
-      let costoP = 0;
       for (const k of perfilesUsados) {
         const perfil = perfilesFiltrados.find(p => p.codigo === k || p.id === k);
         if (!perfil) continue;
@@ -832,33 +833,29 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
         for (const mm of piezas) {
           if (resto >= mm) { resto -= mm; } else { barrasN++; resto = largoBarra - mm; }
         }
-        costoP += barrasN * costoPorBarra;
+        const costo = barrasN * costoPorBarra;
+        costos[a.id].perfiles += costo;
+        costos[a.id].perfilesPorCodigo[k] = (costos[a.id].perfilesPorCodigo[k] || 0) + costo;
       }
-      costos[a.id].perfiles = costoP;
     }
 
   } else {
-    // PROPORCIONAL: barra por barra, con umbral de sobrante
+    // PROPORCIONAL: perfil por perfil, barra por barra, con umbral
     for (const [k, barras] of Object.entries(barrasAcum)) {
       const perfil = perfilesDB.find(p => p.codigo === k || p.id === k);
       if (!perfil) continue;
       const largoBarra = Number(perfil.largo_barra || 6000);
       const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
-      const precioPorMm = costoPorBarra / largoBarra; // $ por mm
+      const precioPorMm = costoPorBarra / largoBarra;
 
       for (const barra of barras) {
         const mmUsados = largoBarra - (barra.resto || 0);
         const pctSobrante = ((barra.resto || 0) / largoBarra) * 100;
 
-        // Registrar sobrante al stock si es significativo (>50mm)
+        // Registrar sobrante al stock
         if ((barra.resto || 0) > 50) {
-          // Asignar al primer ab que tiene piezas en esta barra
-          const abConPiezas = abs.find(a => {
-            const mm = mmPorAb[a.id]?.[k] || 0;
-            return mm > 0;
-          });
+          const abConPiezas = abs.find(a => (mmPorAb[a.id]?.[k] || 0) > 0);
           if (abConPiezas && costos[abConPiezas.id]) {
-            // Evitar duplicados
             const yaExiste = costos[abConPiezas.id].sobrantesAStock.some(
               s => s.perfil_id === perfil.id && s.largo_mm === Math.round(barra.resto)
             );
@@ -873,35 +870,29 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
           }
         }
 
-        // Calcular mm que usa cada abertura en esta barra
-        // Como no tenemos trazabilidad exacta por barra, usamos los mm totales del presupuesto
-        // y los distribuimos proporcionalmente entre las barras
         const mmTotalK = Object.values(mmPorAb).reduce((s, m) => s + (m[k] || 0), 0);
-        const cantBarrasTotal = barras.length;
 
         for (const a of abs) {
           const mmEsta = mmPorAb[a.id]?.[k] || 0;
           if (mmEsta === 0) continue;
-
-          // Fracción de uso de esta abertura sobre el total del presupuesto
           const fraccionAb = mmTotalK > 0 ? mmEsta / mmTotalK : 0;
-          // mm que le corresponden a esta abertura en esta barra
-          const mmEnEstaBarra = mmUsados * fraccionAb;
 
+          let costoEste;
           if (pctSobrante <= umbralSobrante) {
-            // Sobrante pequeño → paga su fracción de la barra COMPLETA
-            costos[a.id].perfiles += costoPorBarra * fraccionAb;
+            // Sobrante pequeño: paga su fracción de la barra completa
+            costoEste = costoPorBarra * fraccionAb;
           } else {
-            // Sobrante grande → paga solo los mm que usa
-            // precio_por_mm × mm_usados_por_esta_abertura_en_esta_barra
-            costos[a.id].perfiles += precioPorMm * mmEnEstaBarra;
+            // Sobrante grande: paga solo sus mm × precio/mm
+            costoEste = precioPorMm * mmUsados * fraccionAb;
           }
+          costos[a.id].perfiles += costoEste;
+          costos[a.id].perfilesPorCodigo[k] = (costos[a.id].perfilesPorCodigo[k] || 0) + costoEste;
         }
       }
     }
   }
 
-  // Vidrios y herrajes (iguales para todos los criterios)
+  // Vidrios y herrajes
   for (const a of abs) {
     costos[a.id].vidrios = (tryParse(a.vidrios, []) || []).reduce((s, v) =>
       s + (v.ancho/1000)*(v.alto/1000)*Number(a.precio_vidrio||8500), 0);
@@ -1333,27 +1324,10 @@ function renderDetalle() {
       const codigo = perfil.codigo || '';
       const largoBarra = Number(perfil.largo_barra || 6000);
       const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
-      // Costo según criterio = suma de lo que pagan todas las aberturas por este perfil
+      // Costo según criterio = suma de perfilesPorCodigo de todas las aberturas para este perfil
       let costoSegunCriterio = 0;
       for (const a of abs) {
-        const params = tryParse(a.params, {});
-        const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
-        const usaEstePerfil = cortesRaw.some(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k));
-        if (!usaEstePerfil) continue;
-        const cAb = costosMat[a.id];
-        if (!cAb) continue;
-        // Calcular qué fracción del costo de perfiles corresponde a este perfil
-        const mmTotalAb = Object.values(
-          cortesRaw.filter(c => c.perfil).reduce((acc, c) => {
-            const ck = c.perfil.codigo || c.perfil.id;
-            acc[ck] = (acc[ck] || 0) + c.largo * c.cantidad;
-            return acc;
-          }, {})
-        ).reduce((s, v) => s + v, 0);
-        const mmEstePerfil = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
-          .reduce((s, c) => s + c.largo * c.cantidad, 0);
-        const fraccion = mmTotalAb > 0 ? mmEstePerfil / mmTotalAb : 0;
-        costoSegunCriterio += cAb.perfiles * fraccion;
+        costoSegunCriterio += costosMat[a.id]?.perfilesPorCodigo?.[k] || 0;
       }
 
       consolidadoFinal[k] = {
@@ -1434,9 +1408,8 @@ function renderDetalle() {
         if (!perfil) return '';
         const mmAb = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
           .reduce((s, c) => s + c.largo * c.cantidad, 0);
-        const mmTotalAb = cortesRaw.filter(c => c.perfil).reduce((s, c) => s + c.largo * c.cantidad, 0);
-        const fraccion = mmTotalAb > 0 ? mmAb / mmTotalAb : 0;
-        const costoEste = (cAb.perfiles || 0) * fraccion;
+        // Usar costo desglosado por perfil directamente
+        const costoEste = cAb.perfilesPorCodigo?.[k] || 0;
         return '<div class="preview-row">'
           + '<span>['+k+'] ' + perfil.nombre + '</span>'
           + '<span style="color:var(--text3)">' + mmAb + 'mm usados</span>'
@@ -2183,7 +2156,7 @@ function previewCalc() {
     const mmEste = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
       .reduce((s, c) => s + c.largo * c.cantidad, 0);
     const fraccion = mmTotal > 0 ? mmEste / mmTotal : 0;
-    const costoEste = cNueva.perfiles * fraccion;
+    const costoEste = cNueva.perfilesPorCodigo?.[k] || (cNueva.perfiles * fraccion);
 
     // Verificar si aprovecha sobrante
     const barrasExist = getBarrasExistentes(absExistentes, state.perfiles);
