@@ -323,6 +323,7 @@ let state = {
   stock: [],
   precios_kg: [],
   config_tipologias: {},
+  umbral_sobrante: 20, // % máximo de sobrante que se cobra (default 20%)
   presupuestoActivo: null,
   loading: false,
   _tab: 'aberturas',
@@ -719,15 +720,31 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
 }
 
 // ============================================================
-// CÁLCULO DE PRECIO PROPORCIONAL POR ABERTURA
+// CÁLCULO DE PRECIO POR ABERTURA
 // criterio: 'proporcional' | 'barra_completa' | 'barras_nuevas'
+// umbralSobrante: % máximo que se considera desperdicio inevitable (0-100)
 // ============================================================
-function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio) {
+function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio, umbralSobrante) {
   criterio = criterio || 'proporcional';
+  umbralSobrante = umbralSobrante !== undefined ? Number(umbralSobrante) : 20;
 
-  // Recalcular bin packing completo acumulando barras
+  // Paso 1: mm usados por cada abertura en cada perfil
+  const mmPorAb = {};
+  for (const a of abs) {
+    const params = tryParse(a.params, {});
+    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
+    mmPorAb[a.id] = {};
+    for (const c of cortesRaw) {
+      if (!c.perfil) continue;
+      const k = c.perfil.codigo || c.perfil.id;
+      mmPorAb[a.id][k] = (mmPorAb[a.id][k] || 0) + c.largo * c.cantidad;
+    }
+  }
+
+  // Paso 2: bin packing consolidado
   let barrasAcum = {};
-  const resultados = []; // { ab, optimizacion, vidrios, herrajesDetalle }
+  const herrajesDetalleMap = {};
+  const optimizacionPorAb = {};
 
   for (const a of abs) {
     const params = tryParse(a.params, {});
@@ -742,113 +759,152 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio)
     }
     const { resultado, barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
     barrasAcum = barrasFinales;
+    optimizacionPorAb[a.id] = resultado;
 
-    // Desglose herrajes
     const tipo = (TIPOS_ABERTURA[a.linea_id] || []).find(t => t.id === a.tipo_id);
     const herrajesCalc = tipo ? tipo.herrajes(params) : [];
     const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
-    const herrajesDetalle = herrajesCalc.map(h => {
+    herrajesDetalleMap[a.id] = herrajesCalc.map(h => {
       const hObj = herrajesFiltrados.find(x => x.id === h.id);
       return {
-        nombre: hObj?.nombre || h.id,
+        nombre: hObj ? hObj.nombre : h.id,
         cantidad: h.cantidad,
-        precioUnit: Number(hObj?.precio || 0),
-        unidad: hObj?.unidad || 'u',
-        subtotal: Number(hObj?.precio || 0) * h.cantidad,
+        precioUnit: Number(hObj ? hObj.precio : 0),
+        unidad: hObj ? hObj.unidad : 'u',
+        subtotal: Number(hObj ? hObj.precio : 0) * h.cantidad,
         desc: h.desc,
       };
     });
-
-    resultados.push({ ab: a, optimizacion: resultado, herrajesDetalle, barrasSnapshot: JSON.parse(JSON.stringify(barrasAcum)) });
   }
 
-  // Ahora calcular costos según criterio
-  const costos = {}; // ab.id -> { perfiles, vidrios, herrajes, total }
+  // Paso 3: para criterio proporcional, calcular costo barra por barra con umbral
+  const costos = {};
+  for (const a of abs) {
+    costos[a.id] = { perfiles: 0, vidrios: 0, herrajes: 0, herrajesDetalle: herrajesDetalleMap[a.id] || [], sobrantesAStock: [] };
+  }
 
-  if (criterio === 'barras_nuevas') {
-    // Criterio original: paga quien abrió la barra
-    for (const r of resultados) {
-      const costoP = r.optimizacion.reduce((s, o) => s + o.costo, 0);
-      const costoV = (tryParse(r.ab.vidrios, []) || []).reduce((s, v) =>
-        s + (v.ancho/1000)*(v.alto/1000)*Number(r.ab.precio_vidrio||8500), 0);
-      const costoH = r.herrajesDetalle.reduce((s, h) => s + h.subtotal, 0);
-      costos[r.ab.id] = { perfiles: costoP, vidrios: costoV, herrajes: costoH, herrajesDetalle: r.herrajesDetalle };
-    }
-  } else {
-    // Para proporcional y barra_completa necesitamos saber cuánto usa cada abertura de cada barra
-    // Reconstruir asignación: por cada barra, qué piezas son de qué abertura
-    // Usamos los snapshots de barrasAcum al final (todas las barras con todas las piezas)
+  if (criterio === 'proporcional') {
+    // Por cada perfil, analizar cada barra con el umbral
+    for (const [k, barras] of Object.entries(barrasAcum)) {
+      const perfil = perfilesDB.find(p => p.codigo === k || p.id === k);
+      if (!perfil) continue;
+      const largoBarra = Number(perfil.largo_barra || 6000);
+      const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
 
-    // Construir mapa: perfilKey -> barra[] con piezas etiquetadas por abertura
-    // Para esto necesitamos rastrear qué piezas pertenecen a qué abertura
-    // Lo hacemos desde los cortesRaw de cada abertura vs las barras finales
+      for (const barra of barras) {
+        const mmUsados = largoBarra - (barra.resto || 0);
+        const pctSobrante = ((barra.resto || 0) / largoBarra) * 100;
 
-    // Enfoque: calcular mm usados por cada abertura en cada perfil
-    const mmPorAberturaPorPerfil = {}; // { abId: { perfilKey: mmUsados } }
-    for (const r of resultados) {
-      mmPorAberturaPorPerfil[r.ab.id] = {};
-      for (const opt of r.optimizacion) {
-        const k = opt.perfil.codigo || opt.perfil.id;
-        // Sumar mm de todas las piezas de esta abertura en este perfil
-        const mm = (opt.barras || []).reduce((s, b) =>
-          s + (b.piezas || []).reduce((s2, pz) => s2 + Number(pz.largo || 0), 0), 0);
-        // También incluir piezas que entraron en barras anteriores (esAhorro)
-        // Para eso miramos los cortesRaw
-        const params = tryParse(r.ab.params, {});
-        const cortesRaw = getCortesRaw(r.ab.linea_id, r.ab.tipo_id, Number(r.ab.ancho), Number(r.ab.alto), params, perfilesDB);
-        const mmTotal = cortesRaw
-          .filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
-          .reduce((s, c) => s + c.largo * c.cantidad, 0);
-        mmPorAberturaPorPerfil[r.ab.id][k] = mmTotal;
+        // Identificar qué aberturas tienen piezas en esta barra
+        const piezasPorAb = {};
+        for (const pz of (barra.piezas || [])) {
+          // Buscar a qué abertura pertenece esta pieza por descripción
+          for (const a of abs) {
+            const params = tryParse(a.params, {});
+            const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
+            const tieneEsteCorte = cortesRaw.some(c =>
+              c.perfil && (c.perfil.codigo === k || c.perfil.id === k) &&
+              c.largo === pz.largo
+            );
+            if (tieneEsteCorte) {
+              piezasPorAb[a.id] = (piezasPorAb[a.id] || 0) + pz.largo;
+              break;
+            }
+          }
+        }
+
+        const mmTotalEnBarra = Object.values(piezasPorAb).reduce((s, v) => s + v, 0);
+
+        if (pctSobrante <= umbralSobrante) {
+          // Desperdicio inevitable → cobrar barra completa distribuida por mm usados
+          for (const [abId, mmAb] of Object.entries(piezasPorAb)) {
+            const fraccion = mmTotalEnBarra > 0 ? mmAb / mmTotalEnBarra : 0;
+            costos[abId].perfiles += costoPorBarra * fraccion;
+          }
+        } else {
+          // Sobrante grande → cobrar solo mm usados, el sobrante va al stock
+          for (const [abId, mmAb] of Object.entries(piezasPorAb)) {
+            const fraccion = mmTotalEnBarra > 0 ? mmAb / mmTotalEnBarra : 0;
+            // Paga su proporción de los mm usados de la barra
+            costos[abId].perfiles += costoPorBarra * (mmUsados / largoBarra) * fraccion;
+          }
+          // Registrar sobrante para agregar al stock
+          const primerAbId = Object.keys(piezasPorAb)[0];
+          if (primerAbId && costos[primerAbId]) {
+            costos[primerAbId].sobrantesAStock.push({
+              perfil_id: perfil.id,
+              perfil_nombre: perfil.nombre,
+              perfil_codigo: perfil.codigo,
+              largo_mm: Math.round(barra.resto || 0),
+            });
+          }
+        }
       }
     }
 
-    // Para cada perfil, calcular costo total de las barras y distribuir
-    for (const r of resultados) {
+  } else if (criterio === 'barra_completa') {
+    for (const a of abs) {
       let costoP = 0;
-      const params = tryParse(r.ab.params, {});
-      const cortesRaw = getCortesRaw(r.ab.linea_id, r.ab.tipo_id, Number(r.ab.ancho), Number(r.ab.alto), params, perfilesDB);
-      const perfilesFiltrados = perfilesDB.filter(pf => pf.linea_id === r.ab.linea_id);
-
-      // Agrupar perfiles usados por esta abertura
-      const perfilesUsados = [...new Set(cortesRaw.filter(c => c.perfil).map(c => c.perfil.codigo || c.perfil.id))];
-
+      const perfilesFiltrados = perfilesDB.filter(pf => pf.linea_id === a.linea_id);
+      const perfilesUsados = Object.keys(mmPorAb[a.id] || {});
       for (const k of perfilesUsados) {
         const perfil = perfilesFiltrados.find(p => p.codigo === k || p.id === k);
         if (!perfil) continue;
-        const barrasFinales = barrasAcum[k] || [];
         const largoBarra = Number(perfil.largo_barra || 6000);
         const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
-        const costoTotalPerfil = barrasFinales.length * costoPorBarra;
-
-        const mmEstaAbertura = mmPorAberturaPorPerfil[r.ab.id]?.[k] || 0;
-        const mmTotalTodasAberturas = Object.values(mmPorAberturaPorPerfil).reduce((s, m) => s + (m[k] || 0), 0);
-        const mmTotalBarras = barrasFinales.length * largoBarra;
-
-        if (criterio === 'proporcional') {
-          // Paga proporción de mm usados (incluyendo desperdicio proporcional)
-          const fraccion = mmTotalTodasAberturas > 0 ? mmEstaAbertura / mmTotalTodasAberturas : 0;
-          costoP += costoTotalPerfil * fraccion;
-        } else { // barra_completa
-          // Paga una barra completa por cada barra que tiene piezas suyas
-          const barrasConPiezas = barrasFinales.filter(b =>
-            (b.piezas || []).some(pz => pz._abId === r.ab.id)
-          ).length;
-          // Como no tenemos _abId, usamos las barras nuevas de esta abertura
-          costoP += r.optimizacion.filter(o => (o.perfil.codigo||o.perfil.id) === k)
-            .reduce((s, o) => s + o.cantBarras * costoPorBarra, 0);
+        const params = tryParse(a.params, {});
+        const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
+        const piezas = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
+          .flatMap(c => Array(c.cantidad).fill(c.largo)).sort((a, b) => b - a);
+        let barrasN = 0, resto = 0;
+        for (const mm of piezas) {
+          if (resto >= mm) { resto -= mm; } else { barrasN++; resto = largoBarra - mm; }
         }
+        costoP += barrasN * costoPorBarra;
       }
-
-      const costoV = (tryParse(r.ab.vidrios, []) || []).reduce((s, v) =>
-        s + (v.ancho/1000)*(v.alto/1000)*Number(r.ab.precio_vidrio||8500), 0);
-      const costoH = r.herrajesDetalle.reduce((s, h) => s + h.subtotal, 0);
-      costos[r.ab.id] = { perfiles: costoP, vidrios: costoV, herrajes: costoH, herrajesDetalle: r.herrajesDetalle };
+      costos[a.id].perfiles = costoP;
     }
+
+  } else {
+    // barras_nuevas
+    for (const a of abs) {
+      const opt = optimizacionPorAb[a.id] || [];
+      costos[a.id].perfiles = opt.reduce((s, o) => s + o.costo, 0);
+    }
+  }
+
+  // Vidrios y herrajes (igual para todos los criterios)
+  for (const a of abs) {
+    costos[a.id].vidrios = (tryParse(a.vidrios, []) || []).reduce((s, v) =>
+      s + (v.ancho/1000)*(v.alto/1000)*Number(a.precio_vidrio||8500), 0);
+    costos[a.id].herrajes = (herrajesDetalleMap[a.id] || []).reduce((s, h) => s + h.subtotal, 0);
   }
 
   return costos;
 }
+
+// Agregar sobrantes al stock automáticamente al confirmar abertura
+async function agregarSobrantesAStock(costos, abs) {
+  for (const a of abs) {
+    const sobrantes = costos[a.id]?.sobrantesAStock || [];
+    for (const sb of sobrantes) {
+      if (sb.largo_mm < 50) continue; // ignorar sobrantes muy chicos
+      const linea = state.lineas.find(l => l.id === a.linea_id);
+      const s = {
+        id: genId(),
+        perfil_id: sb.perfil_id,
+        perfil_nombre: sb.perfil_nombre + (sb.perfil_codigo ? ' ['+sb.perfil_codigo+']' : ''),
+        linea: linea?.nombre || a.linea_id,
+        largo_mm: sb.largo_mm,
+        nota: 'Sobrante automático — ' + a.nombre,
+        fecha: today(),
+      };
+      state.stock.push(s);
+      await sheetsAppend(SHEETS.stock, s);
+    }
+  }
+}
+
 
 // Estructura: { linea_id: { tipo_id: { perfiles: [...], vidrio: {...} } } }
 // ============================================================
@@ -1003,7 +1059,8 @@ async function loadAll() {
       }
     }
 
-    // Cargar defaults si es primera vez
+      const umbralRow = configRows.find(r => r.key === 'umbral_sobrante');
+      if (umbralRow) state.umbral_sobrante = Number(umbralRow.value) || 20;
     if (!lineas.length)     for (const l of LINEAS_DEFAULT)     await sheetsAppend(SHEETS.lineas, l);
     if (!perfiles.length)   for (const p of PERFILES_DEFAULT)   await sheetsAppend(SHEETS.perfiles, p);
     if (!herrajes.length)   for (const h of HERRAJES_DEFAULT)   await sheetsAppend(SHEETS.herrajes, h);
@@ -1019,6 +1076,17 @@ function setLoading(v) { state.loading = v; }
 // ============================================================
 // RENDER PRINCIPAL
 // ============================================================
+function setUmbralSobrante(valor) {
+  state.umbral_sobrante = Number(valor) || 20;
+  // Guardar en Config del Sheet
+  sheetsGet(SHEETS.config).then(rows => {
+    const row = rows.find(r => r.key === 'umbral_sobrante');
+    if (row) sheetsUpdateRow(SHEETS.config, row.id, { key: 'umbral_sobrante', value: String(state.umbral_sobrante) });
+    else sheetsAppend(SHEETS.config, { id: genId(), key: 'umbral_sobrante', value: String(state.umbral_sobrante) });
+  });
+  toast('Umbral actualizado');
+}
+
 function setCriterioPrecio(valor) {
   state._criterioPrecio = valor;
   render();
@@ -1106,7 +1174,7 @@ function renderDetalle() {
     const pres = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKg = getPrecioKgPresupuesto(pres);
     const criterio = state._criterioPrecio || 'proporcional';
-    const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio);
+    const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
 
     const abCards = abs.map((a, idx) => {
       const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0, herrajesDetalle: [] };
@@ -1333,7 +1401,7 @@ function renderDetalle() {
     const presR = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKgR = getPrecioKgPresupuesto(presR);
     const criterioR = state._criterioPrecio || 'proporcional';
-    const costosR = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgR, criterioR);
+    const costosR = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgR, criterioR, state.umbral_sobrante);
     const costoPR = Object.values(costosR).reduce((s, c) => s + c.perfiles * 1, 0);
     const costoVR = Object.values(costosR).reduce((s, c) => s + c.vidrios * 1, 0);
     const costoHR = Object.values(costosR).reduce((s, c) => s + c.herrajes * 1, 0);
@@ -1563,7 +1631,21 @@ function renderConfig() {
   </div>
 
   <div class="config-section">
-    <div class="config-title">Precios por kg de aluminio</div>
+    <div class="config-title">Parametros de calculo</div>
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <div class="form-group" style="margin:0;flex:0 0 auto;">
+        <label>Umbral de sobrante (%)</label>
+        <input type="number" min="0" max="100" value="${state.umbral_sobrante}" style="width:100px;font-family:'DM Mono',monospace;"
+          onchange="setUmbralSobrante(this.value)">
+      </div>
+      <div style="font-size:12px;color:var(--text3);max-width:400px;">
+        Si el sobrante de una barra es menor a este % se cobra la barra completa (desperdicio inevitable).
+        Si es mayor, se cobra solo lo usado y el sobrante se registra en stock automáticamente.
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
     <div class="table-wrap">
       <table><thead><tr><th>Color</th><th>Linea</th><th>Tipo</th><th>Precio/kg</th><th></th></tr></thead>
       <tbody>${preciosRows}</tbody></table>
@@ -2083,6 +2165,15 @@ async function confirmarAgregarAbertura() {
   };
   state.aberturas.push(ab);
   await sheetsAppend(SHEETS.aberturas, ab);
+
+  // Calcular sobrantes con el criterio proporcional y umbral configurado
+  const todasAbs = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+  const costosConSobrantes = calcularCostoAberturas(
+    todasAbs, state.perfiles, state.herrajes, precioKg,
+    'proporcional', state.umbral_sobrante
+  );
+  await agregarSobrantesAStock(costosConSobrantes, [ab]);
+
   await recalcularTotal();
   closeModal();
   toast('Abertura agregada');
