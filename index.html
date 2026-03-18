@@ -760,6 +760,7 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   const herrajesDetalleMap = {};
 
   for (const a of abs) {
+    const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
     const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
     const perfilesFiltrados = perfilesDB.filter(pf => pf.linea_id === a.linea_id);
@@ -768,12 +769,12 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
       if (!c.perfil) continue;
       const key = c.perfil.codigo || c.perfil.id;
       if (!agrupados[key]) agrupados[key] = [];
-      agrupados[key].push({ largo: c.largo, cantidad: c.cantidad, desc: c.desc });
+      agrupados[key].push({ largo: c.largo, cantidad: c.cantidad * cant, desc: c.desc });
     }
     const { barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
     barrasAcum = barrasFinales;
 
-    // Herrajes
+    // Herrajes — multiplicar por cantidad de aberturas
     const tipo = (TIPOS_ABERTURA[a.linea_id] || []).find(t => t.id === a.tipo_id);
     const herrajesCalc = tipo ? tipo.herrajes(params) : [];
     const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
@@ -781,25 +782,26 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
       const hObj = herrajesFiltrados.find(x => x.id === h.id);
       return {
         nombre: hObj ? hObj.nombre : h.id,
-        cantidad: h.cantidad,
+        cantidad: h.cantidad * cant,
         precioUnit: Number(hObj ? hObj.precio : 0),
         unidad: hObj ? hObj.unidad : 'u',
-        subtotal: Number(hObj ? hObj.precio : 0) * h.cantidad,
+        subtotal: Number(hObj ? hObj.precio : 0) * h.cantidad * cant,
         desc: h.desc,
       };
     });
   }
 
-  // Paso 2: mm usados por abertura por perfil
+  // Paso 2: mm usados por abertura por perfil (multiplicado por cantidad de aberturas)
   const mmPorAb = {};
   for (const a of abs) {
+    const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
     const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
     mmPorAb[a.id] = {};
     for (const c of cortesRaw) {
       if (!c.perfil) continue;
       const k = c.perfil.codigo || c.perfil.id;
-      mmPorAb[a.id][k] = (mmPorAb[a.id][k] || 0) + c.largo * c.cantidad;
+      mmPorAb[a.id][k] = (mmPorAb[a.id][k] || 0) + c.largo * c.cantidad * cant;
     }
   }
 
@@ -818,6 +820,7 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
 
   if (criterio === 'barra_completa') {
     for (const a of abs) {
+      const cant = Number(a.cantidad) || 1;
       const perfilesFiltrados = perfilesDB.filter(pf => pf.linea_id === a.linea_id);
       const params = tryParse(a.params, {});
       const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
@@ -827,9 +830,10 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
         if (!perfil) continue;
         const largoBarra = Number(perfil.largo_barra || 6000);
         const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
+        // Multiplicar piezas por cantidad de aberturas
         const piezas = cortesRaw
           .filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
-          .flatMap(c => Array(c.cantidad).fill(c.largo))
+          .flatMap(c => Array(c.cantidad * cant).fill(c.largo))
           .sort((a, b) => b - a);
         let barrasN = 0, resto = 0;
         for (const mm of piezas) {
@@ -1932,16 +1936,18 @@ function calcularNecesidadesMateriales(p) {
   // Agrupar mm necesarios por perfil en todo el presupuesto
   const necesidades = {}; // { perfilCodigo: { perfil, piezas: [{largo, desc}], mmTotal } }
   for (const a of abs) {
+    const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
     const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
     for (const c of cortesRaw) {
       if (!c.perfil) continue;
       const k = c.perfil.codigo || c.perfil.id;
       if (!necesidades[k]) necesidades[k] = { perfil: c.perfil, piezas: [], mmTotal: 0 };
-      for (let i = 0; i < c.cantidad; i++) {
-        necesidades[k].piezas.push({ largo: c.largo, desc: c.desc, abertura: a.nombre });
+      // Repetir cada pieza por la cantidad de aberturas
+      for (let i = 0; i < c.cantidad * cant; i++) {
+        necesidades[k].piezas.push({ largo: c.largo, desc: c.desc, abertura: a.nombre + (cant > 1 ? " ("+cant+"u.)" : "") });
       }
-      necesidades[k].mmTotal += c.largo * c.cantidad;
+      necesidades[k].mmTotal += c.largo * c.cantidad * cant;
     }
   }
 
