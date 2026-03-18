@@ -738,7 +738,7 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
 
   const costoPerfiles = optimizacion.reduce((s, o) => s + o.costo, 0);
   const costoVidrios = vidrios.reduce((s, v) => s + (v.ancho / 1000) * (v.alto / 1000) * precioVidrio, 0);
-  const herrajesCalc = tipo.herrajes(params);
+  const herrajesCalc = getHerrajesTipo(linea_id, tipo_id, params);
   const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === linea_id);
   const costoHerrajes = herrajesCalc.reduce((s, h) => {
     const hObj = herrajesFiltrados.find(x => x.id === h.id);
@@ -774,19 +774,18 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
     const { barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
     barrasAcum = barrasFinales;
 
-    // Herrajes — multiplicar por cantidad de aberturas
-    const tipo = (TIPOS_ABERTURA[a.linea_id] || []).find(t => t.id === a.tipo_id);
-    const herrajesCalc = tipo ? tipo.herrajes(params) : [];
+    // Herrajes — usar config de tipología si existe, sino hardcoded
+    const herrajesCalc = getHerrajesTipo(a.linea_id, a.tipo_id, params);
     const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
     herrajesDetalleMap[a.id] = herrajesCalc.map(h => {
       const hObj = herrajesFiltrados.find(x => x.id === h.id);
       return {
-        nombre: hObj ? hObj.nombre : h.id,
+        nombre: hObj ? hObj.nombre : (h.descripcion || h.id),
         cantidad: h.cantidad * cant,
         precioUnit: Number(hObj ? hObj.precio : 0),
         unidad: hObj ? hObj.unidad : 'u',
         subtotal: Number(hObj ? hObj.precio : 0) * h.cantidad * cant,
-        desc: h.desc,
+        desc: h.descripcion || h.desc || '',
       };
     });
   }
@@ -946,6 +945,10 @@ const CONFIG_TIPOLOGIAS_DEFAULT = {
         { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 58',     solo_si_n: '' },
       ],
       vidrio: { formula_ancho: '(W/N) - 73', formula_alto: 'H - 168' },
+      herrajes: [
+        { id: 'h1', descripcion: 'Rueda corrediza (par x hoja)', cantidad: 'N', solo_si_n: '' },
+        { id: 'h2', descripcion: 'Cierre / Falleba',             cantidad: '1', solo_si_n: '' },
+      ],
     },
     'puerta-abrir': {
       perfiles: [
@@ -960,6 +963,9 @@ const CONFIG_TIPOLOGIAS_DEFAULT = {
         { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 30',     solo_si_n: '' },
       ],
       vidrio: { formula_ancho: 'W - 203', formula_alto: 'H - 160' },
+      herrajes: [
+        { id: 'h2', descripcion: 'Cierre / Manija', cantidad: '1', solo_si_n: '' },
+      ],
     },
     'puerta-ventana-corrediza': {
       perfiles: [
@@ -992,6 +998,15 @@ const CONFIG_TIPOLOGIAS_DEFAULT = {
         { rol: 'Premarco horizontal',     codigo: '5205', cantidad: '2',   formula_largo: 'W + 5',            solo_si_n: '' },
       ],
       vidrio: { formula_ancho: '(W/N) - 73', formula_alto: 'H - 222' },
+      herrajes: [
+        { id: 'h4', descripcion: 'Cierre bi-punto (1 x hoja)',       cantidad: 'N',   solo_si_n: '' },
+        { id: 'h3', descripcion: 'Burlete perimetral (2m x hoja)',    cantidad: 'N*2', solo_si_n: '' },
+        { id: 'h5', descripcion: 'Rueda doble (2 x hoja)',            cantidad: 'N*2', solo_si_n: '' },
+        { id: 'h6', descripcion: 'Felpa (3m x hoja)',                 cantidad: 'N*3', solo_si_n: '' },
+        { id: 'h7', descripcion: 'T-91 (bolsa)',                      cantidad: '1',   solo_si_n: '' },
+        { id: 'h8', descripcion: 'Tapones antidesagote',              cantidad: '4',   solo_si_n: '' },
+        { id: 'h9', descripcion: 'T-87 (bolsa)',                      cantidad: '1',   solo_si_n: '' },
+      ],
     },
   },
 };
@@ -1001,6 +1016,24 @@ function getConfigTipo(linea_id, tipo_id) {
   const custom = state.config_tipologias?.[linea_id]?.[tipo_id];
   const def = CONFIG_TIPOLOGIAS_DEFAULT[linea_id]?.[tipo_id];
   return custom || def || null;
+}
+
+// Obtener herrajes de una tipología: usa config editable si existe, sino hardcoded en TIPOS_ABERTURA
+function getHerrajesTipo(linea_id, tipo_id, params) {
+  const cfg = getConfigTipo(linea_id, tipo_id);
+  const N = Number(params?.hojas) || 1;
+  if (cfg && cfg.herrajes && cfg.herrajes.length > 0) {
+    return cfg.herrajes
+      .filter(h => !h.solo_si_n || String(h.solo_si_n) === String(N))
+      .map(h => {
+        let cantNum = 1;
+        try { cantNum = Math.round(Function('N', 'return ' + h.cantidad)(N)); } catch {}
+        return { id: h.id, cantidad: cantNum, descripcion: h.descripcion, desc: h.descripcion };
+      });
+  }
+  // Fallback: función hardcodeada en TIPOS_ABERTURA
+  const tipo = (TIPOS_ABERTURA[linea_id] || []).find(t => t.id === tipo_id);
+  return tipo ? tipo.herrajes(params || {}) : [];
 }
 
 // Evaluar fórmula simple (solo operaciones con W, H, N)
@@ -1740,6 +1773,38 @@ function renderConfig() {
     <div style="font-size:11px;color:var(--text3);margin-top:8px;">Variables disponibles: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">W</code> ancho vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">H</code> alto vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">N</code> cantidad de hojas</div>
   ` : '';
 
+  // Construir tabla de herrajes configurables para la tipología activa
+  const herrajesConfigList = cfg && cfg.herrajes ? cfg.herrajes
+    : getHerrajesTipo(lineaActiva, tipoActivo, { hojas: 1 }).map(h => ({
+        id: h.id,
+        descripcion: h.descripcion || h.desc || '',
+        cantidad: String(h.cantidad),
+        solo_si_n: '',
+      }));
+  const herrajesConfigRows2 = herrajesConfigList.map((h, idx) => {
+    const condBg = h.solo_si_n ? (h.solo_si_n==='2' ? '#2B8EFF22' : '#A855F722') : 'transparent';
+    const selectOpts = state.herrajes.filter(hh => hh.linea_id === lineaActiva)
+      .map(hh => `<option value="${hh.id}"${hh.id===h.id?' selected':''}>${hh.nombre}</option>`).join('');
+    return `<tr style="${h.solo_si_n ? 'background:'+condBg+';' : ''}">
+      <td><select style="width:100%;font-size:13px;" onchange="updateConfigHerraje('${lineaActiva}','${tipoActivo}',${idx},'id',this.value)">${selectOpts}</select></td>
+      <td style="font-size:12px;color:var(--text3);">${h.descripcion||''}</td>
+      <td><input value="${h.cantidad}" style="width:80px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigHerraje('${lineaActiva}','${tipoActivo}',${idx},'cantidad',this.value)"></td>
+      <td><select style="width:70px;font-size:12px;" onchange="updateConfigHerraje('${lineaActiva}','${tipoActivo}',${idx},'solo_si_n',this.value)">
+        <option value="" ${!h.solo_si_n?'selected':''}>Siempre</option>
+        <option value="2" ${h.solo_si_n==='2'?'selected':''}>N = 2</option>
+        <option value="3" ${h.solo_si_n==='3'?'selected':''}>N = 3</option>
+        <option value="4" ${h.solo_si_n==='4'?'selected':''}>N = 4</option>
+      </select></td>
+      <td><button class="btn-danger" onclick="eliminarConfigHerraje('${lineaActiva}','${tipoActivo}',${idx})">✕</button></td>
+    </tr>`;
+  }).join('');
+  const herrajesConfigHtml = `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Herraje</th><th>Descripcion</th><th>Cantidad</th><th>Solo si N=</th><th></th></tr></thead>
+      <tbody>${herrajesConfigRows2 || '<tr><td colspan="5" style="color:var(--text3);padding:12px;">Sin herrajes configurados</td></tr>'}</tbody>
+    </table></div>
+    <button class="btn-secondary" style="margin-top:10px;" onclick="agregarConfigHerraje('${lineaActiva}','${tipoActivo}')">+ Agregar herraje</button>`;
+
   return `
   <div class="page-header">
     <div><div class="page-title">Configuracion</div></div>
@@ -1815,6 +1880,10 @@ function renderConfig() {
     <div style="margin-top:20px;font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;">Vidrio</div>
     ${vidrioConfig}
 
+    <div style="margin-top:24px;font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;">Herrajes y accesorios</div>
+    <div style="font-size:11px;color:var(--text3);margin:4px 0 12px;">Configurá los herrajes de este tipo. En Cantidad usá <code style="background:var(--bg);padding:1px 5px;border-radius:3px;">N</code> para hojas (ej: <code style="background:var(--bg);padding:1px 5px;border-radius:3px;">N*2</code>).</div>
+    ${herrajesConfigHtml}
+
     <button class="btn-secondary" style="margin-top:16px;" onclick="resetConfigTipo('${lineaActiva}','${tipoActivo}')">↺ Restaurar valores por defecto</button>
   </div>`;
 }
@@ -1878,6 +1947,49 @@ function updateConfigVidrio(linea_id, tipo_id, campo, valor) {
   cfg.vidrio[campo] = valor;
   saveConfigTipo(linea_id, tipo_id);
   toast('Guardado');
+}
+
+function updateConfigHerraje(linea_id, tipo_id, idx, campo, valor) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  if (!cfg.herrajes) cfg.herrajes = getHerrajesTipo(linea_id, tipo_id, { hojas: 1 }).map(h => ({
+    id: h.id, descripcion: h.descripcion || h.desc || '', cantidad: String(h.cantidad), solo_si_n: '',
+  }));
+  if (cfg.herrajes[idx]) {
+    cfg.herrajes[idx][campo] = valor;
+    // Actualizar descripcion automáticamente cuando cambia el herraje seleccionado
+    if (campo === 'id') {
+      const hObj = state.herrajes.find(h => h.id === valor);
+      if (hObj) cfg.herrajes[idx].descripcion = hObj.nombre;
+    }
+  }
+  saveConfigTipo(linea_id, tipo_id);
+  toast('Guardado');
+  render();
+}
+
+function agregarConfigHerraje(linea_id, tipo_id) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  if (!cfg.herrajes) cfg.herrajes = getHerrajesTipo(linea_id, tipo_id, { hojas: 1 }).map(h => ({
+    id: h.id, descripcion: h.descripcion || h.desc || '', cantidad: String(h.cantidad), solo_si_n: '',
+  }));
+  const primerHerraje = state.herrajes.find(h => h.linea_id === linea_id);
+  cfg.herrajes.push({
+    id: primerHerraje?.id || '',
+    descripcion: primerHerraje?.nombre || '',
+    cantidad: '1',
+    solo_si_n: '',
+  });
+  saveConfigTipo(linea_id, tipo_id);
+  render();
+}
+
+function eliminarConfigHerraje(linea_id, tipo_id, idx) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  if (!cfg.herrajes) return;
+  cfg.herrajes.splice(idx, 1);
+  saveConfigTipo(linea_id, tipo_id);
+  toast('Herraje eliminado');
+  render();
 }
 
 async function resetConfigTipo(linea_id, tipo_id) {
