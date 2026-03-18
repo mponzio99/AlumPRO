@@ -1212,9 +1212,12 @@ function renderDetalle() {
   const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
   const tab = state._tab || 'aberturas';
 
-  const costoP = abs.reduce((s, a) => s + Number(a.costo_perfiles || 0), 0);
-  const costoV = abs.reduce((s, a) => s + Number(a.costo_vidrios || 0), 0);
-  const costoH = abs.reduce((s, a) => s + Number(a.costo_herrajes || 0), 0);
+  // Calcular costos en tiempo real usando calcularCostoAberturas (respeta cantidad)
+  const precioKgHeader = getPrecioKgPresupuesto(p);
+  const costosHeader = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgHeader, 'proporcional', state.umbral_sobrante);
+  const costoP = Object.values(costosHeader).reduce((s, c) => s + c.perfiles, 0);
+  const costoV = Object.values(costosHeader).reduce((s, c) => s + c.vidrios, 0);
+  const costoH = Object.values(costosHeader).reduce((s, c) => s + c.herrajes, 0);
   const subtotal = costoP + costoV + costoH;
   const markup = Number(p.markup || 0);
   const totalFinal = subtotal * (1 + markup / 100);
@@ -1230,7 +1233,8 @@ function renderDetalle() {
 
     const abCards = abs.map((a, idx) => {
       const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0, herrajesDetalle: [] };
-      const cTotal = (c.perfiles + c.vidrios + c.herrajes) * Number(a.cantidad);
+      // calcularCostoAberturas ya devuelve el costo total para las N unidades (bin packing con cant*piezas)
+      const cTotal = c.perfiles + c.vidrios + c.herrajes;
       const herrajesHtml = (c.herrajesDetalle || []).map(h =>
         `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);padding:2px 0;">
           <span>${h.nombre} × ${h.cantidad} ${h.unidad}</span>
@@ -1255,15 +1259,15 @@ function renderDetalle() {
             <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Desglose</div>
             <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;">
               <span>Perfiles aluminio</span>
-              <span style="font-family:'DM Mono',monospace;">${fmt(c.perfiles * Number(a.cantidad))}</span>
+              <span style="font-family:'DM Mono',monospace;">${fmt(c.perfiles)}</span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;">
               <span>Vidrios</span>
-              <span style="font-family:'DM Mono',monospace;">${fmt(c.vidrios * Number(a.cantidad))}</span>
+              <span style="font-family:'DM Mono',monospace;">${fmt(c.vidrios)}</span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;">
               <span>Herrajes</span>
-              <span style="font-family:'DM Mono',monospace;">${fmt(c.herrajes * Number(a.cantidad))}</span>
+              <span style="font-family:'DM Mono',monospace;">${fmt(c.herrajes)}</span>
             </div>
           </div>
           ${herrajesHtml ? `<div style="flex:1;min-width:180px;">
@@ -1297,6 +1301,7 @@ function renderDetalle() {
     // Recalcular bin packing consolidado para detalle de barras
     let barrasAcum = {};
     for (const a of abs) {
+      const cant = Number(a.cantidad) || 1;
       const params = tryParse(a.params, {});
       const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
       const perfilesFiltrados = state.perfiles.filter(pf => pf.linea_id === a.linea_id);
@@ -1305,7 +1310,7 @@ function renderDetalle() {
         if (!c.perfil) continue;
         const key = c.perfil.codigo || c.perfil.id;
         if (!agrupados[key]) agrupados[key] = [];
-        agrupados[key].push({ largo: c.largo, cantidad: c.cantidad, desc: c.desc });
+        agrupados[key].push({ largo: c.largo, cantidad: c.cantidad * cant, desc: c.desc });
       }
       const { barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
       barrasAcum = barrasFinales;
@@ -1426,8 +1431,9 @@ function renderDetalle() {
       const filas = perfilesUsados.map(k => {
         const perfil = perfilesFiltrados.find(p => p.codigo === k || p.id === k);
         if (!perfil) return '';
+        const cant = Number(a.cantidad) || 1;
         const mmAb = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
-          .reduce((s, c) => s + c.largo * c.cantidad, 0);
+          .reduce((s, c) => s + c.largo * c.cantidad * cant, 0);
         // Usar costo desglosado por perfil directamente
         const costoEste = cAb.perfilesPorCodigo?.[k] || 0;
         return '<div class="preview-row">'
@@ -1436,11 +1442,12 @@ function renderDetalle() {
           + '<span>' + fmt(costoEste) + '</span>'
           + '</div>';
       }).join('');
+      const cantAb = Number(a.cantidad) || 1;
       const vidrioFilas = (tryParse(a.vidrios, []) || []).map(v =>
         '<div class="preview-row">'
-        + '<span>' + v.desc + ' (' + v.ancho + 'x' + v.alto + 'mm)</span>'
-        + '<span style="color:var(--text3)">' + ((v.ancho/1000)*(v.alto/1000)).toFixed(2) + ' m²</span>'
-        + '<span>' + fmt((v.ancho/1000)*(v.alto/1000)*Number(a.precio_vidrio||8500)) + '</span>'
+        + '<span>' + v.desc + ' (' + v.ancho + 'x' + v.alto + 'mm)' + (cantAb > 1 ? ' × '+cantAb : '') + '</span>'
+        + '<span style="color:var(--text3)">' + ((v.ancho/1000)*(v.alto/1000)*cantAb).toFixed(2) + ' m²</span>'
+        + '<span>' + fmt((v.ancho/1000)*(v.alto/1000)*Number(a.precio_vidrio||8500)*cantAb) + '</span>'
         + '</div>'
       ).join('');
       return '<div style="margin-bottom:18px">'
@@ -1894,7 +1901,10 @@ async function actualizarMarkup(val) {
   if (!p) return;
   const mk = parseFloat(val) || 0;
   const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
-  const sub = abs.reduce((s, a) => s + Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0), 0);
+  const sub = abs.reduce((s, a) => {
+    const cant = Number(a.cantidad) || 1;
+    return s + (Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0)) * cant;
+  }, 0);
   const total = sub * (1 + mk / 100);
   p.markup = mk; p.total_final = total;
   await sheetsUpdateRow(SHEETS.presupuestos, p.id, { markup: mk, total_final: total });
@@ -2287,7 +2297,10 @@ async function recalcularTotal() {
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
   if (!p) return;
   const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
-  const sub = abs.reduce((s, a) => s + Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0), 0);
+  const precioKg = getPrecioKgPresupuesto(p);
+  // Usar calcularCostoAberturas para tener en cuenta cantidad correctamente
+  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, 'proporcional', state.umbral_sobrante);
+  const sub = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
   const total = sub * (1 + Number(p.markup||0) / 100);
   p.total_final = total;
   await sheetsUpdateRow(SHEETS.presupuestos, p.id, { total_final: total });
