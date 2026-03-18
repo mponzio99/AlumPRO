@@ -1758,18 +1758,18 @@ function renderConfig() {
   ).join('');
 
   const cfg = getConfigTipo(lineaActiva, tipoActivo);
-  const perfilesConfigRows = cfg ? cfg.perfiles.map((pf, idx) => {
+  const perfilesConfigRows = cfg && cfg.perfiles.length > 0 ? cfg.perfiles.map((pf, idx) => {
     const condColor = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF' : '#A855F7') : 'var(--text3)';
     const condBg    = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF22' : '#A855F722') : 'transparent';
     return `
     <tr style="${pf.solo_si_n ? 'background:'+condBg+';' : ''}">
-      <td style="color:var(--text);font-size:13px;">
+      <td>
         ${pf.solo_si_n ? '<span style="font-size:10px;font-weight:700;color:'+condColor+';margin-right:6px;border:1px solid '+condColor+';padding:1px 5px;border-radius:3px;">N='+pf.solo_si_n+'</span>' : ''}
-        ${pf.rol}
+        <input value="${pf.rol||''}" placeholder="Ej: Jamba lateral" style="width:140px;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'rol',this.value)">
       </td>
       <td><input value="${pf.codigo}" style="width:80px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'codigo',this.value)"></td>
       <td><input value="${pf.cantidad}" style="width:70px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'cantidad',this.value)"></td>
-      <td><input value="${pf.formula_largo}" style="width:180px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'formula_largo',this.value)"></td>
+      <td><input value="${pf.formula_largo}" placeholder="Ej: W - 42" style="width:160px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'formula_largo',this.value)"></td>
       <td>
         <select style="width:70px;font-size:12px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'solo_si_n',this.value)">
           <option value="" ${!pf.solo_si_n?'selected':''}>Siempre</option>
@@ -1778,8 +1778,9 @@ function renderConfig() {
           <option value="4" ${pf.solo_si_n==='4'?'selected':''}>N = 4</option>
         </select>
       </td>
+      <td><button class="btn-danger" onclick="eliminarConfigPerfil('${lineaActiva}','${tipoActivo}',${idx})">✕</button></td>
     </tr>`;
-  }).join('') : '<tr><td colspan="5" style="color:var(--text3);padding:16px;">Sin configuracion para esta tipologia</td></tr>';
+  }).join('') : '<tr><td colspan="6" style="color:var(--text3);padding:16px;text-align:center;">Sin perfiles configurados. Usa "+ Agregar perfil" para empezar.</td></tr>';
 
   const vidrioConfig = cfg ? `
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
@@ -1914,11 +1915,14 @@ function renderConfig() {
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Rol del perfil</th><th>Codigo</th><th>Cantidad</th><th>Formula largo (mm)</th><th>Solo si N=</th></tr></thead>
+        <thead><tr><th>Rol del perfil</th><th>Codigo</th><th>Cantidad</th><th>Formula largo (mm)</th><th>Solo si N=</th><th></th></tr></thead>
         <tbody>${perfilesConfigRows}</tbody>
       </table>
     </div>
-    <div style="margin-top:8px;font-size:11px;color:var(--text3);">En Cantidad: usar <code style="background:var(--bg);padding:2px 5px;border-radius:3px;">N</code> para hojas, <code style="background:var(--bg);padding:2px 5px;border-radius:3px;">N*2</code> para doble, etc.</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+      <div style="font-size:11px;color:var(--text3);">En Cantidad: usar <code style="background:var(--bg);padding:2px 5px;border-radius:3px;">N</code> para hojas, <code style="background:var(--bg);padding:2px 5px;border-radius:3px;">N*2</code> para doble, etc.</div>
+      <button class="btn-secondary" style="font-size:12px;padding:5px 12px;" onclick="agregarConfigPerfil('${lineaActiva}','${tipoActivo}')">+ Agregar perfil</button>
+    </div>
 
     <div style="margin-top:20px;font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;">Vidrio</div>
     ${vidrioConfig}
@@ -2098,6 +2102,31 @@ async function eliminarTipologiaCustom(id) {
   state._configTipo = tipos[0]?.id || '';
 
   toast('Tipología eliminada');
+  render();
+}
+
+function agregarConfigPerfil(linea_id, tipo_id) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  if (!cfg.perfiles) cfg.perfiles = [];
+  // Find first available profile for this linea as default
+  const primerPerfil = state.perfiles.find(p => p.linea_id === linea_id);
+  cfg.perfiles.push({
+    rol: '',
+    codigo: primerPerfil?.codigo || '',
+    cantidad: '1',
+    formula_largo: 'W',
+    solo_si_n: '',
+  });
+  saveConfigTipo(linea_id, tipo_id);
+  render();
+}
+
+function eliminarConfigPerfil(linea_id, tipo_id, idx) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  if (!cfg.perfiles) return;
+  cfg.perfiles.splice(idx, 1);
+  saveConfigTipo(linea_id, tipo_id);
+  toast('Perfil eliminado');
   render();
 }
 
