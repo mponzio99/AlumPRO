@@ -351,6 +351,7 @@ let state = {
   stock: [],
   precios_kg: [],
   config_tipologias: {},
+  tipologias_custom: [], // { id, linea_id, nombre, con_hojas, hojas_min, hojas_max, hojas_default }
   umbral_sobrante: 20, // % máximo de sobrante que se cobra (default 20%)
   presupuestoActivo: null,
   loading: false,
@@ -580,28 +581,28 @@ const TIPOS_ABERTURA = {
 
 // Obtiene los cortes raw de una abertura sin calcular costos
 function getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB) {
-  const tipos = TIPOS_ABERTURA[linea_id];
-  if (!tipos) return [];
-  const tipo = tipos.find(t => t.id === tipo_id);
-  if (!tipo) return [];
   const perfilesFiltrados = perfilesDB.filter(p => p.linea_id === linea_id);
-  const N = Number(params.hojas) || 1;
+  const N = Number(params?.hojas) || 1;
   const cfg = getConfigTipo(linea_id, tipo_id);
-  let cortesRaw;
+  // Si hay config (custom o editada), siempre usarla
   if (cfg && cfg.perfiles && cfg.perfiles.length > 0) {
-    cortesRaw = cfg.perfiles
+    return cfg.perfiles
       .filter(pf => !pf.solo_si_n || String(pf.solo_si_n) === String(N))
       .map(pf => {
         const perfil = perfilesFiltrados.find(p => p.codigo === pf.codigo || p.id === pf.codigo);
         if (!perfil) return null;
-        const cantNum = Math.round(Function('N','return '+pf.cantidad)(N));
+        let cantNum = 1;
+        try { cantNum = Math.round(Function('N','return '+pf.cantidad)(N)); } catch {}
         const largoNum = evalFormula(pf.formula_largo, W, H, N);
         return { perfil, cantidad: cantNum, largo: largoNum, desc: pf.rol };
       }).filter(Boolean);
-  } else {
-    cortesRaw = tipo.cortes(W, H, params, perfilesFiltrados);
   }
-  return cortesRaw;
+  // Fallback: función hardcodeada (solo tipos built-in)
+  const tipos = TIPOS_ABERTURA[linea_id];
+  if (!tipos) return [];
+  const tipo = tipos.find(t => t.id === tipo_id);
+  if (!tipo) return [];
+  return tipo.cortes(W, H, params, perfilesFiltrados);
 }
 
 // Bin packing First Fit Decreasing sobre una lista de piezas con barras ya existentes
@@ -714,14 +715,16 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
 
   const cortesRaw = getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB);
 
-  // Vidrios
+  // Vidrios — formula de config si existe, sino hardcoded (solo built-in), sino vacío
   let vidrios;
   if (cfg && cfg.vidrio && cfg.vidrio.formula_ancho && cfg.vidrio.formula_alto) {
     const vAncho = evalFormula(cfg.vidrio.formula_ancho, W, H, N);
     const vAlto  = evalFormula(cfg.vidrio.formula_alto,  W, H, N);
     vidrios = Array.from({ length: N }, (_, i) => ({ desc: 'Vidrio hoja ' + (i+1), ancho: vAncho, alto: vAlto }));
-  } else {
+  } else if (tipo && typeof tipo.vidrios === 'function') {
     vidrios = tipo.vidrios(W, H, params);
+  } else {
+    vidrios = [];
   }
 
   const agrupados = {};
@@ -1036,6 +1039,21 @@ function getHerrajesTipo(linea_id, tipo_id, params) {
   return tipo ? tipo.herrajes(params || {}) : [];
 }
 
+// Obtener todos los tipos de una línea: hardcoded + custom
+function getTiposLinea(linea_id) {
+  const base = TIPOS_ABERTURA[linea_id] || [];
+  const custom = state.tipologias_custom.filter(t => t.linea_id === linea_id).map(t => ({
+    id: t.id,
+    nombre: t.nombre,
+    isCustom: true,
+    params: t.con_hojas ? [{ id: 'hojas', nombre: 'Cantidad de hojas', default: Number(t.hojas_default)||1, min: Number(t.hojas_min)||1, max: Number(t.hojas_max)||4 }] : [],
+    cortes: () => [], // los cortes vienen de getCortesRaw via config
+    vidrios: () => [],
+    herrajes: () => [],
+  }));
+  return [...base, ...custom];
+}
+
 // Evaluar fórmula simple (solo operaciones con W, H, N)
 function evalFormula(formula, W, H, N) {
   try {
@@ -1102,8 +1120,12 @@ async function loadAll() {
 
     // Restaurar config de tipologías guardada
     state.config_tipologias = {};
+    state.tipologias_custom = [];
     for (const row of configRows) {
-      if (row.key && row.key.startsWith('tipologia_')) {
+      if (row.key && row.key.startsWith('tipologia_custom_meta__')) {
+        // Metadatos de tipología custom: { id, linea_id, nombre, con_hojas, hojas_min, hojas_max, hojas_default }
+        try { state.tipologias_custom.push(JSON.parse(row.value)); } catch {}
+      } else if (row.key && row.key.startsWith('tipologia_')) {
         try {
           const parsed = JSON.parse(row.value);
           // key formato: tipologia_linea_id__tipo_id
@@ -1729,7 +1751,7 @@ function renderConfig() {
     '<button class="tab '+(lineaActiva===l.id?'active':'')+'" onclick="setConfigLinea(\''+l.id+'\')" style="font-size:12px;padding:8px 14px;">'+l.nombre+'</button>'
   ).join('');
 
-  const tiposDeLinea = TIPOS_ABERTURA[lineaActiva] || [];
+  const tiposDeLinea = getTiposLinea(lineaActiva);
   const tipoActivo = state._configTipo || tiposDeLinea[0]?.id || '';
   const tipoTabs = tiposDeLinea.map(t =>
     '<button class="tab '+(tipoActivo===t.id?'active':'')+'" onclick="setConfigTipo(\''+t.id+'\')" style="font-size:12px;padding:8px 14px;">'+t.nombre+'</button>'
@@ -1772,6 +1794,19 @@ function renderConfig() {
     </div>
     <div style="font-size:11px;color:var(--text3);margin-top:8px;">Variables disponibles: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">W</code> ancho vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">H</code> alto vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">N</code> cantidad de hojas</div>
   ` : '';
+
+  // Badges de tipologías custom con botón eliminar
+  const customDeLinea = state.tipologias_custom.filter(t => t.linea_id === lineaActiva);
+  const customTiposBadges = customDeLinea.length > 0
+    ? '<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;">'
+      + customDeLinea.map(t =>
+          '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:#A855F722;border:1px solid #A855F744;border-radius:20px;font-size:12px;color:#A855F7;">'
+          + t.nombre
+          + '<button onclick="eliminarTipologiaCustom('' + t.id + '')" style="background:none;border:none;cursor:pointer;color:#A855F7;font-size:13px;line-height:1;padding:0;">✕</button>'
+          + '</span>'
+        ).join('')
+      + '</div>'
+    : '';
 
   // Construir tabla de herrajes configurables para la tipología activa
   const herrajesConfigList = cfg && cfg.herrajes ? cfg.herrajes
@@ -1863,11 +1898,17 @@ function renderConfig() {
     <div class="config-title" style="margin-bottom:16px;">Formulas de corte por tipologia</div>
     <div style="font-size:13px;color:var(--text3);margin-bottom:16px;">Editá las holguras, codigos de perfil y formulas de vidrio para cada tipo de abertura. Los cambios se aplican a los nuevos presupuestos.</div>
 
-    <div style="margin-bottom:4px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Linea</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Linea</span>
+    </div>
     <div class="tabs" style="margin-bottom:16px;">${lineaTabs}</div>
 
-    <div style="margin-bottom:4px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Tipo de abertura</div>
-    <div class="tabs" style="margin-bottom:16px;">${tipoTabs}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Tipo de abertura</span>
+      <button class="btn-secondary" style="font-size:12px;padding:5px 12px;" onclick="showModalNuevaTipologia('${lineaActiva}')">+ Nueva tipología</button>
+    </div>
+    <div class="tabs" style="margin-bottom:8px;">${tipoTabs}</div>
+    ${customTiposBadges}
 
     <div class="table-wrap">
       <table>
@@ -1898,7 +1939,7 @@ function toggleMatRow(id) {
 
 function setConfigLinea(linea_id) {
   state._configLinea = linea_id;
-  const tipos = TIPOS_ABERTURA[linea_id] || [];
+  const tipos = getTiposLinea(linea_id);
   state._configTipo = tipos[0]?.id || '';
   render();
 }
@@ -1947,6 +1988,128 @@ function updateConfigVidrio(linea_id, tipo_id, campo, valor) {
   cfg.vidrio[campo] = valor;
   saveConfigTipo(linea_id, tipo_id);
   toast('Guardado');
+}
+
+// ============================================================
+// TIPOLOGÍAS CUSTOM
+// ============================================================
+function showModalNuevaTipologia(linea_id) {
+  const linea = state.lineas.find(l => l.id === linea_id);
+  const tituloLinea = linea ? linea.nombre : linea_id;
+  showModal(`
+    <div class="modal-title">Nueva tipologia - ${tituloLinea}</div>
+    <div class="form-group">
+      <label>Nombre</label>
+      <input id="nt_nombre" placeholder="Ej: Ventana Oscilobatiente, Porton, Monoluz...">
+    </div>
+    <div class="form-group">
+      <label>Tiene parametro de cantidad de hojas (N)?</label>
+      <select id="nt_con_hojas" onchange="toggleHojasConfig(this.value)">
+        <option value="0">No - N siempre = 1</option>
+        <option value="1">Si - el usuario elige cantidad de hojas</option>
+      </select>
+    </div>
+    <div id="nt_hojas_wrap" style="display:none;">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Hojas minimo</label>
+          <input type="number" id="nt_hojas_min" value="1" min="1" max="10" style="width:80px">
+        </div>
+        <div class="form-group">
+          <label>Hojas maximo</label>
+          <input type="number" id="nt_hojas_max" value="4" min="1" max="10" style="width:80px">
+        </div>
+        <div class="form-group">
+          <label>Hojas por defecto</label>
+          <input type="number" id="nt_hojas_default" value="1" min="1" max="10" style="width:80px">
+        </div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--text3);padding:10px 12px;background:var(--bg);border-radius:8px;margin-top:4px;">
+      Despues de crear la tipologia podras configurar sus perfiles y herrajes desde las tabs de abajo.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" id="btnCrearTipo" onclick="crearTipologiaCustom('` + linea_id + `')">Crear tipologia</button>
+    </div>`);
+}
+
+function toggleHojasConfig(val) {
+  const wrap = document.getElementById('nt_hojas_wrap');
+  if (wrap) wrap.style.display = val === '1' ? 'block' : 'none';
+}
+
+async function crearTipologiaCustom(linea_id) {
+  const btn = document.getElementById('btnCrearTipo');
+  const nombre = document.getElementById('nt_nombre')?.value?.trim();
+  if (!nombre) { toast('Ingresá un nombre', 'error'); return; }
+  const con_hojas = document.getElementById('nt_con_hojas')?.value === '1';
+  const hojas_min     = Number(document.getElementById('nt_hojas_min')?.value) || 1;
+  const hojas_max     = Number(document.getElementById('nt_hojas_max')?.value) || 4;
+  const hojas_default = Number(document.getElementById('nt_hojas_default')?.value) || 1;
+
+  // Generar id único basado en nombre
+  const id = linea_id + '_custom_' + nombre.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').slice(0, 30);
+
+  // Verificar que no exista ya
+  if (state.tipologias_custom.find(t => t.id === id)) {
+    toast('Ya existe una tipología con ese nombre', 'error'); return;
+  }
+
+  setBtnLoading(btn, true, 'Creando...');
+  try {
+    const meta = { id, linea_id, nombre, con_hojas, hojas_min, hojas_max, hojas_default };
+    state.tipologias_custom.push(meta);
+
+    // Guardar metadatos en Config sheet
+    const key = 'tipologia_custom_meta__' + id;
+    await sheetsAppend(SHEETS.config, { id: genId(), key, value: JSON.stringify(meta) });
+
+    // Crear config vacía para que aparezca en la sección de fórmulas
+    if (!state.config_tipologias[linea_id]) state.config_tipologias[linea_id] = {};
+    state.config_tipologias[linea_id][id] = { perfiles: [], vidrio: { formula_ancho: '', formula_alto: '' }, herrajes: [] };
+    await saveConfigTipo(linea_id, id);
+
+    // Navegar a la nueva tipología en config
+    state._configLinea = linea_id;
+    state._configTipo  = id;
+
+    closeModal();
+    toast('Tipología "' + nombre + '" creada');
+    render();
+  } catch(e) {
+    toast('Error al crear tipología', 'error');
+    setBtnLoading(btn, false);
+  }
+}
+
+async function eliminarTipologiaCustom(id) {
+  const t = state.tipologias_custom.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm('¿Eliminar la tipología "' + t.nombre + '"? Se eliminarán también sus fórmulas configuradas.')) return;
+
+  // Eliminar meta del Config sheet
+  const configRows = await sheetsGet(SHEETS.config);
+  const metaRow = configRows.find(r => r.key === 'tipologia_custom_meta__' + id);
+  if (metaRow) await sheetsDeleteRow(SHEETS.config, metaRow.id);
+
+  // Eliminar config de fórmulas del sheet
+  const cfgKey = 'tipologia_' + t.linea_id + '__' + id;
+  const cfgRow = configRows.find(r => r.key === cfgKey);
+  if (cfgRow) await sheetsDeleteRow(SHEETS.config, cfgRow.id);
+
+  // Limpiar state
+  state.tipologias_custom = state.tipologias_custom.filter(x => x.id !== id);
+  if (state.config_tipologias[t.linea_id]) {
+    delete state.config_tipologias[t.linea_id][id];
+  }
+
+  // Volver al primer tipo de la línea
+  const tipos = getTiposLinea(t.linea_id);
+  state._configTipo = tipos[0]?.id || '';
+
+  toast('Tipología eliminada');
+  render();
 }
 
 function updateConfigHerraje(linea_id, tipo_id, idx, campo, valor) {
@@ -2599,7 +2762,7 @@ function showAddAbertura() {
 
 function updateTipos() {
   const linea = document.getElementById('m_linea')?.value;
-  const tipos = TIPOS_ABERTURA[linea] || [];
+  const tipos = getTiposLinea(linea);
   const sel = document.getElementById('m_tipo');
   if (!sel) return;
   sel.innerHTML = tipos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
@@ -2609,7 +2772,7 @@ function updateTipos() {
 function updateParams() {
   const linea = document.getElementById('m_linea')?.value;
   const tipoId = document.getElementById('m_tipo')?.value;
-  const tipos = TIPOS_ABERTURA[linea] || [];
+  const tipos = getTiposLinea(linea);
   const tipo = tipos.find(t => t.id === tipoId);
   const wrap = document.getElementById('m_params');
   if (!wrap || !tipo) return;
@@ -2652,7 +2815,7 @@ function previewCalc() {
 
   // Simular abertura nueva junto con las existentes para calcular costo real
   const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
-  const tipos = TIPOS_ABERTURA[linea] || [];
+  const tipos = getTiposLinea(linea);
   const tipo  = tipos.find(t => t.id === tipoId);
   if (!tipo) return;
   const params = {};
@@ -2744,7 +2907,7 @@ async function confirmarAgregarAbertura() {
 
     const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKg = getPrecioKgPresupuesto(p);
-    const tipos = TIPOS_ABERTURA[linea_id] || [];
+    const tipos = getTiposLinea(linea_id);
     const tipo = tipos.find(t => t.id === tipoId);
     const params = {};
     (tipo?.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
