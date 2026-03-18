@@ -1795,14 +1795,16 @@ function renderConfig() {
     <div style="font-size:11px;color:var(--text3);margin-top:8px;">Variables disponibles: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">W</code> ancho vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">H</code> alto vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">N</code> cantidad de hojas</div>
   ` : '';
 
-  // Badges de tipologías custom con botón eliminar
+  // Badges de tipologias custom con boton eliminar
   const customDeLinea = state.tipologias_custom.filter(t => t.linea_id === lineaActiva);
   const customTiposBadges = customDeLinea.length > 0
     ? '<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;">'
       + customDeLinea.map(t =>
-          '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:#A855F722;border:1px solid #A855F744;border-radius:20px;font-size:12px;color:#A855F7;">'
-          + t.nombre
-          + '<button onclick="eliminarTipologiaCustom('' + t.id + '')" style="background:none;border:none;cursor:pointer;color:#A855F7;font-size:13px;line-height:1;padding:0;">✕</button>'
+          '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;'
+          + 'background:#A855F722;border:1px solid #A855F744;border-radius:20px;font-size:12px;color:#A855F7;">'
+          + t.nombre + ' '
+          + '<button onclick="eliminarTipologiaCustom(&#39;' + t.id + '&#39;)" '
+          + 'style="background:none;border:none;cursor:pointer;color:#A855F7;font-size:13px;line-height:1;padding:0;">x</button>'
           + '</span>'
         ).join('')
       + '</div>'
@@ -1996,44 +1998,31 @@ function updateConfigVidrio(linea_id, tipo_id, campo, valor) {
 function showModalNuevaTipologia(linea_id) {
   const linea = state.lineas.find(l => l.id === linea_id);
   const tituloLinea = linea ? linea.nombre : linea_id;
-  showModal(`
-    <div class="modal-title">Nueva tipologia - ${tituloLinea}</div>
-    <div class="form-group">
-      <label>Nombre</label>
-      <input id="nt_nombre" placeholder="Ej: Ventana Oscilobatiente, Porton, Monoluz...">
-    </div>
-    <div class="form-group">
-      <label>Tiene parametro de cantidad de hojas (N)?</label>
-      <select id="nt_con_hojas" onchange="toggleHojasConfig(this.value)">
-        <option value="0">No - N siempre = 1</option>
-        <option value="1">Si - el usuario elige cantidad de hojas</option>
-      </select>
-    </div>
-    <div id="nt_hojas_wrap" style="display:none;">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Hojas minimo</label>
-          <input type="number" id="nt_hojas_min" value="1" min="1" max="10" style="width:80px">
-        </div>
-        <div class="form-group">
-          <label>Hojas maximo</label>
-          <input type="number" id="nt_hojas_max" value="4" min="1" max="10" style="width:80px">
-        </div>
-        <div class="form-group">
-          <label>Hojas por defecto</label>
-          <input type="number" id="nt_hojas_default" value="1" min="1" max="10" style="width:80px">
-        </div>
-      </div>
-    </div>
-    <div style="font-size:12px;color:var(--text3);padding:10px 12px;background:var(--bg);border-radius:8px;margin-top:4px;">
-      Despues de crear la tipologia podras configurar sus perfiles y herrajes desde las tabs de abajo.
-    </div>
-    <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn-primary" id="btnCrearTipo" onclick="crearTipologiaCustom('` + linea_id + `')">Crear tipologia</button>
-    </div>`);
+  showModal(
+    '<div class="modal-title">Nueva tipologia - ' + tituloLinea + '</div>'
+    + '<div class="form-group"><label>Nombre</label>'
+    + '<input id="nt_nombre" placeholder="Ej: Ventana Oscilobatiente, Porton, Monoluz..."></div>'
+    + '<div class="form-group"><label>Tiene parametro de cantidad de hojas (N)?</label>'
+    + '<select id="nt_con_hojas" onchange="toggleHojasConfig(this.value)">'
+    + '<option value="0">No - N siempre = 1</option>'
+    + '<option value="1">Si - el usuario elige cantidad de hojas</option>'
+    + '</select></div>'
+    + '<div id="nt_hojas_wrap" style="display:none;"><div class="form-row">'
+    + '<div class="form-group"><label>Hojas minimo</label>'
+    + '<input type="number" id="nt_hojas_min" value="1" min="1" max="10" style="width:80px"></div>'
+    + '<div class="form-group"><label>Hojas maximo</label>'
+    + '<input type="number" id="nt_hojas_max" value="4" min="1" max="10" style="width:80px"></div>'
+    + '<div class="form-group"><label>Hojas por defecto</label>'
+    + '<input type="number" id="nt_hojas_default" value="1" min="1" max="10" style="width:80px"></div>'
+    + '</div></div>'
+    + '<div style="font-size:12px;color:var(--text3);padding:10px 12px;background:var(--bg);border-radius:8px;margin-top:4px;">'
+    + 'Despues de crear la tipologia podras configurar sus perfiles y herrajes desde las tabs de abajo.</div>'
+    + '<div class="modal-actions">'
+    + '<button class="btn-secondary" onclick="closeModal()">Cancelar</button>'
+    + '<button class="btn-primary" id="btnCrearTipo" onclick="crearTipologiaCustom(\'' + linea_id + '\')">'
+    + 'Crear tipologia</button></div>'
+  );
 }
-
 function toggleHojasConfig(val) {
   const wrap = document.getElementById('nt_hojas_wrap');
   if (wrap) wrap.style.display = val === '1' ? 'block' : 'none';
