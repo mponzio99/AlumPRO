@@ -939,7 +939,7 @@ async function agregarSobrantesAStock(costos, abs) {
         perfil_nombre: sb.perfil_nombre + (sb.perfil_codigo ? ' ['+sb.perfil_codigo+']' : ''),
         linea: linea?.nombre || a.linea_id,
         largo_mm: sb.largo_mm,
-        nota: 'Sobrante automático — ' + a.nombre,
+        nota: 'Sobrante automatico - ' + a.nombre,
         fecha: today(),
       };
       state.stock.push(s);
@@ -1553,7 +1553,7 @@ function renderDetalle() {
       ).join('');
       return '<div style="margin-bottom:18px">'
         + '<div style="font-size:13px;font-weight:700;color:var(--text3);background:var(--bg);padding:8px 12px;border-radius:7px;margin-bottom:6px">'
-          + a.nombre + ' — ' + a.ancho + 'x' + a.alto + 'mm x ' + a.cantidad + ' u.'
+          + a.nombre + ' - ' + a.ancho + 'x' + a.alto + 'mm x ' + a.cantidad + ' u.'
         + '</div>'
         + filas + vidrioFilas
         + '</div>';
@@ -2599,7 +2599,7 @@ async function confirmarPasarAConstruccion() {
           perfil_nombre: su.perfil_nombre || su.perfil?.nombre || '',
           linea: linea.nombre || '',
           largo_mm: su.restoFinal,
-          nota: 'Resto de sobrante usado en ' + p.cliente + ' — ' + p.obra,
+          nota: 'Resto de sobrante usado en ' + p.cliente + ' - ' + p.obra,
           fecha: today(),
         };
         state.stock.push(nuevoSobrante);
@@ -2619,7 +2619,7 @@ async function confirmarPasarAConstruccion() {
         perfil_nombre: sn.perfil?.nombre + (sn.codigo ? ' [' + sn.codigo + ']' : ''),
         linea: linea.nombre || '',
         largo_mm: sn.largo_mm,
-        nota: 'Sobrante de obra: ' + p.cliente + ' — ' + p.obra,
+        nota: 'Sobrante de obra: ' + p.cliente + ' - ' + p.obra,
         fecha: today(),
       };
       state.stock.push(s);
@@ -2742,7 +2742,7 @@ async function eliminarAbertura(id) {
       }
     }
     await recalcularTotal();
-    toast('Abertura eliminada — costos recalculados');
+    toast('Abertura eliminada - costos recalculados');
   } catch(e) {
     toast('Error al eliminar', 'error');
   } finally {
@@ -2767,7 +2767,7 @@ async function eliminarPresupuesto(id) {
   const p = state.presupuestos.find(x => x.id === id);
   if (!p) return;
   if (p.estado !== 'generado') { toast('Solo se pueden eliminar presupuestos en estado Generado', 'error'); return; }
-  if (!confirm(`¿Eliminar el presupuesto de ${p.cliente} — ${p.obra}? Esta acción no se puede deshacer.`)) return;
+  if (!confirm('¿Eliminar el presupuesto de ' + p.cliente + ' - ' + p.obra + '? Esta accion no se puede deshacer.')) return;
   // Eliminar aberturas asociadas
   const absDelPpto = state.aberturas.filter(a => a.presupuesto_id === id);
   for (const a of absDelPpto) {
