@@ -939,7 +939,7 @@ async function agregarSobrantesAStock(costos, abs) {
         perfil_nombre: sb.perfil_nombre + (sb.perfil_codigo ? ' ['+sb.perfil_codigo+']' : ''),
         linea: linea?.nombre || a.linea_id,
         largo_mm: sb.largo_mm,
-        nota: 'Sobrante automatico - ' + a.nombre,
+        nota: 'Sobrante automático — ' + a.nombre,
         fecha: today(),
       };
       state.stock.push(s);
@@ -1553,7 +1553,7 @@ function renderDetalle() {
       ).join('');
       return '<div style="margin-bottom:18px">'
         + '<div style="font-size:13px;font-weight:700;color:var(--text3);background:var(--bg);padding:8px 12px;border-radius:7px;margin-bottom:6px">'
-          + a.nombre + ' - ' + a.ancho + 'x' + a.alto + 'mm x ' + a.cantidad + ' u.'
+          + a.nombre + ' — ' + a.ancho + 'x' + a.alto + 'mm x ' + a.cantidad + ' u.'
         + '</div>'
         + filas + vidrioFilas
         + '</div>';
@@ -1618,7 +1618,7 @@ function renderDetalle() {
       'Precios sujetos a modificacion por variacion del precio del aluminio.',
       'No incluye mano de obra.',
       'Incluye mano de obra e instalacion.',
-      'Seña del 30% para iniciar la obra.',
+      'Senia del 30% para iniciar la obra.',
       'Entrega estimada: 20 dias habiles desde aprobacion.',
       'Vidrios no incluidos en el precio.',
       'Vidrios incluidos en el precio.',
@@ -1626,34 +1626,32 @@ function renderDetalle() {
       'Precio final sujeto a medicion en obra.',
     ];
     const comentarioActual = p.comentarios || '';
-    const frasesHtml = FRASES.map(f =>
-      '<button onclick="insertarFrase(this.dataset.frase)" data-frase="' + f.replace(/"/g, '&quot;') + '" '
-      + 'style="text-align:left;padding:7px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;'
-      + 'color:var(--text2);cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;width:100%;" '
-      + 'onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" '
-      + 'onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">'
-      + f + '</button>'
-    ).join('');
-    tabContent = `
-      <div style="display:flex;gap:20px;flex-wrap:wrap;">
-        <div style="flex:2;min-width:280px;">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Texto del comentario</div>
-          <textarea id="comentarioTextarea" rows="10"
-            style="width:100%;padding:12px 14px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;resize:vertical;outline:none;"
-            placeholder="Ingresa las condiciones, notas y aclaraciones del presupuesto..."
-            onchange="guardarComentario(this.value)"
-            oninput="this.style.borderColor='var(--accent)'"
-            onblur="guardarComentario(this.value);this.style.borderColor='var(--border2)'"
-          >${comentarioActual}</textarea>
-          <div style="font-size:11px;color:var(--text3);margin-top:6px;">Se imprime al final del PDF y Word.</div>
-        </div>
-        <div style="flex:1;min-width:220px;">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Frases rapidas</div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            ${frasesHtml}
-          </div>
-        </div>
-      </div>`;
+    let frasesHtml = '';
+    for (const f of FRASES) {
+      frasesHtml += '<button onclick="insertarFrase(this)" data-frase="' + f.replace(/"/g, '&quot;') + '" '
+        + 'style="text-align:left;padding:7px 12px;background:var(--surface2);'
+        + 'border:1px solid var(--border);border-radius:7px;color:var(--text2);'
+        + 'cursor:pointer;font-size:12px;font-family:sans-serif;width:100%;margin-bottom:0;">'
+        + f + '</button>';
+    }
+    tabContent = '<div style="display:flex;gap:20px;flex-wrap:wrap;">'
+      + '<div style="flex:2;min-width:280px;">'
+        + '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Texto del comentario</div>'
+        + '<textarea id="comentarioTextarea" rows="10" '
+          + 'style="width:100%;padding:12px 14px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;font-family:sans-serif;resize:vertical;outline:none;" '
+          + 'placeholder="Ingresa las condiciones, notas y aclaraciones del presupuesto..." '
+          + 'onchange="guardarComentario(this.value)">'
+          + (comentarioActual ? comentarioActual.replace(/</g,'&lt;').replace(/>/g,'&gt;') : '')
+        + '</textarea>'
+        + '<div style="font-size:11px;color:var(--text3);margin-top:6px;">Se imprime al final del PDF y Word.</div>'
+      + '</div>'
+      + '<div style="flex:1;min-width:220px;">'
+        + '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Frases rapidas</div>'
+        + '<div style="display:flex;flex-direction:column;gap:6px;">'
+          + frasesHtml
+        + '</div>'
+      + '</div>'
+    + '</div>';
   }
 
   return `
@@ -2295,12 +2293,11 @@ async function guardarComentario(texto) {
   await sheetsUpdateRow(SHEETS.presupuestos, p.id, { comentarios: texto });
 }
 
-function insertarFrase(frase) {
+function insertarFrase(btn) {
+  const frase = (btn && btn.dataset) ? btn.dataset.frase : btn;
   const ta = document.getElementById('comentarioTextarea');
-  if (!ta) return;
-  const sep = ta.value && !ta.value.endsWith('
-') ? '
-' : '';
+  if (!ta || !frase) return;
+  const sep = ta.value && !ta.value.endsWith('\n') ? '\n' : '';
   ta.value = ta.value + sep + frase;
   guardarComentario(ta.value);
   ta.focus();
@@ -2599,7 +2596,7 @@ async function confirmarPasarAConstruccion() {
           perfil_nombre: su.perfil_nombre || su.perfil?.nombre || '',
           linea: linea.nombre || '',
           largo_mm: su.restoFinal,
-          nota: 'Resto de sobrante usado en ' + p.cliente + ' - ' + p.obra,
+          nota: 'Resto de sobrante usado en ' + p.cliente + ' — ' + p.obra,
           fecha: today(),
         };
         state.stock.push(nuevoSobrante);
@@ -2619,7 +2616,7 @@ async function confirmarPasarAConstruccion() {
         perfil_nombre: sn.perfil?.nombre + (sn.codigo ? ' [' + sn.codigo + ']' : ''),
         linea: linea.nombre || '',
         largo_mm: sn.largo_mm,
-        nota: 'Sobrante de obra: ' + p.cliente + ' - ' + p.obra,
+        nota: 'Sobrante de obra: ' + p.cliente + ' — ' + p.obra,
         fecha: today(),
       };
       state.stock.push(s);
@@ -2742,7 +2739,7 @@ async function eliminarAbertura(id) {
       }
     }
     await recalcularTotal();
-    toast('Abertura eliminada - costos recalculados');
+    toast('Abertura eliminada — costos recalculados');
   } catch(e) {
     toast('Error al eliminar', 'error');
   } finally {
@@ -2767,7 +2764,7 @@ async function eliminarPresupuesto(id) {
   const p = state.presupuestos.find(x => x.id === id);
   if (!p) return;
   if (p.estado !== 'generado') { toast('Solo se pueden eliminar presupuestos en estado Generado', 'error'); return; }
-  if (!confirm('¿Eliminar el presupuesto de ' + p.cliente + ' - ' + p.obra + '? Esta accion no se puede deshacer.')) return;
+  if (!confirm(`¿Eliminar el presupuesto de ${p.cliente} — ${p.obra}? Esta acción no se puede deshacer.`)) return;
   // Eliminar aberturas asociadas
   const absDelPpto = state.aberturas.filter(a => a.presupuesto_id === id);
   for (const a of absDelPpto) {
