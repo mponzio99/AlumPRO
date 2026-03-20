@@ -1361,7 +1361,7 @@ function renderDetalle() {
           <div style="flex:2;min-width:200px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
               <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Herrajes y accesorios</span>
-              <button onclick="agregarHerrajeAbertura('${a.id}')" style="font-size:11px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--text3);cursor:pointer;font-family:'DM Sans',sans-serif;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">+ agregar</button>
+              <button onclick="showModalAgregarHerraje('${a.id}')" style="font-size:11px;padding:3px 10px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--text3);cursor:pointer;font-family:'DM Sans',sans-serif;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">+ Agregar herraje</button>
             </div>
             ${herrajesHtml || '<div style="font-size:12px;color:var(--text3);">Sin herrajes</div>'}
           </div>
@@ -2624,33 +2624,16 @@ async function confirmarPasarAConstruccion() {
   }
 }
 
-// Helper: renderiza una fila de herraje editable (evita anidamiento de comillas)
+// Helper: renderiza una fila de herraje (solo lectura + boton eliminar)
 function _renderHerrajeRow(abId, lineaId, abCantidad, h, hi) {
-  const selectOpts = state.herrajes
-    .filter(hh => hh.linea_id === lineaId)
-    .map(hh => '<option value="' + hh.id + '"' + (hh.id === h.id ? ' selected' : '') + '>' + hh.nombre + '</option>')
-    .join('');
   const subtotal = fmt(h.precio * h.cantidad * (Number(abCantidad) || 1));
-  return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;flex-wrap:wrap;border-bottom:1px solid var(--border);">'
-    + '<select style="flex:1;min-width:130px;font-size:12px;padding:3px 6px;"'
-    + ' onchange="cambiarTipoHerrajeAbertura(\'' + abId + '\',' + hi + ',this.value)">'
-    + selectOpts
-    + '</select>'
-    + '<div style="display:flex;align-items:center;gap:3px;">'
-    + '<span style="font-size:11px;color:var(--text3);">x</span>'
-    + '<input type="number" value="' + h.cantidad + '" min="0" step="1"'
-    + ' style="width:50px;padding:3px 5px;font-size:12px;text-align:center;"'
-    + ' onchange="editarHerrajeAbertura(\'' + abId + '\',' + hi + ',\'cantidad\',this.value)">'
-    + '</div>'
-    + '<div style="display:flex;align-items:center;gap:3px;">'
-    + '<span style="font-size:11px;color:var(--text3);">$</span>'
-    + '<input type="number" value="' + h.precio + '" min="0"'
-    + ' style="width:78px;padding:3px 5px;font-size:12px;"'
-    + ' onchange="editarHerrajeAbertura(\'' + abId + '\',' + hi + ',\'precio\',this.value)">'
-    + '</div>'
-    + '<span style="font-size:12px;color:var(--accent);min-width:68px;text-align:right;">' + subtotal + '</span>'
+  return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);">'
+    + '<span style="flex:1;font-size:13px;color:var(--text2);">' + h.nombre + '</span>'
+    + '<span style="font-size:12px;color:var(--text3);">' + h.cantidad + ' ' + (h.unidad||'u') + '</span>'
+    + '<span style="font-size:13px;color:var(--accent);min-width:72px;text-align:right;">' + subtotal + '</span>'
     + '<button onclick="eliminarHerrajeAbertura(\'' + abId + '\',' + hi + ')"'
-    + ' style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:0 2px;">x</button>'
+    + ' style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:13px;padding:0 3px;"'
+    + ' title="Eliminar">x</button>'
     + '</div>';
 }
 
@@ -2695,42 +2678,7 @@ async function _guardarHerrajesSnap(a) {
   await recalcularTotal();
 }
 
-async function cambiarTipoHerrajeAbertura(abId, hi, herrajeId) {
-  const a = state.aberturas.find(x => x.id === abId);
-  if (!a) return;
-  const hObj = state.herrajes.find(h => h.id === herrajeId);
-  if (!hObj) return;
-  _showSavingOverlay(abId);
-  try {
-    const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
-    if (!snap[hi]) return;
-    snap[hi].id = hObj.id;
-    snap[hi].nombre = hObj.nombre;
-    snap[hi].precio = Number(hObj.precio);
-    snap[hi].unidad = hObj.unidad || 'u';
-    a.herrajes_snap = snap;
-    await _guardarHerrajesSnap(a);
-  } finally {
-    _hideSavingOverlay(abId);
-    render();
-  }
-}
 
-async function editarHerrajeAbertura(abId, hi, campo, valor) {
-  const a = state.aberturas.find(x => x.id === abId);
-  if (!a) return;
-  _showSavingOverlay(abId);
-  try {
-    const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
-    if (!snap[hi]) return;
-    snap[hi][campo] = Number(valor);
-    a.herrajes_snap = snap;
-    await _guardarHerrajesSnap(a);
-  } finally {
-    _hideSavingOverlay(abId);
-    render();
-  }
-}
 
 async function eliminarHerrajeAbertura(abId, hi) {
   const a = state.aberturas.find(x => x.id === abId);
@@ -2747,21 +2695,67 @@ async function eliminarHerrajeAbertura(abId, hi) {
   }
 }
 
-async function agregarHerrajeAbertura(abId) {
+function showModalAgregarHerraje(abId) {
   const a = state.aberturas.find(x => x.id === abId);
   if (!a) return;
-  _showSavingOverlay(abId);
+  const opts = state.herrajes
+    .filter(h => h.linea_id === a.linea_id)
+    .map(h => '<option value="' + h.id + '">' + h.nombre + ' (' + fmt(h.precio) + '/' + h.unidad + ')</option>')
+    .join('');
+  if (!opts) { toast('No hay herrajes configurados para esta linea', 'error'); return; }
+  showModal(
+    '<div class="modal-title">Agregar herraje</div>'
+    + '<div class="form-group"><label>Herraje</label>'
+    + '<select id="mh_id" onchange="actualizarPrecioModalHerraje(\'' + abId + '\')">' + opts + '</select></div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label>Cantidad</label>'
+    + '<input type="number" id="mh_cant" value="1" min="1" style="width:80px;font-family:DM Mono,monospace;"></div>'
+    + '<div class="form-group"><label>Precio unit ($)</label>'
+    + '<input type="number" id="mh_precio" value="" style="width:110px;font-family:DM Mono,monospace;"></div>'
+    + '</div>'
+    + '<div class="modal-actions">'
+    + '<button class="btn-secondary" onclick="closeModal()">Cancelar</button>'
+    + '<button class="btn-primary" id="btnConfirmarHerr" onclick="confirmarAgregarHerraje(\'' + abId + '\')">Agregar</button>'
+    + '</div>'
+  );
+  // Pre-fill precio with first herraje
+  actualizarPrecioModalHerraje(abId);
+}
+
+function actualizarPrecioModalHerraje(abId) {
+  const a = state.aberturas.find(x => x.id === abId);
+  if (!a) return;
+  const id = document.getElementById('mh_id')?.value;
+  const hObj = state.herrajes.find(h => h.id === id);
+  const input = document.getElementById('mh_precio');
+  if (input && hObj) input.value = hObj.precio;
+}
+
+async function confirmarAgregarHerraje(abId) {
+  const a = state.aberturas.find(x => x.id === abId);
+  if (!a) return;
+  const herrajeId = document.getElementById('mh_id')?.value;
+  const cant = Number(document.getElementById('mh_cant')?.value) || 1;
+  const precio = Number(document.getElementById('mh_precio')?.value) || 0;
+  const hObj = state.herrajes.find(h => h.id === herrajeId);
+  if (!hObj) return;
+  const btn = document.getElementById('btnConfirmarHerr');
+  setBtnLoading(btn, true, 'Guardando...');
   try {
     const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
-    const primerH = state.herrajes.find(h => h.linea_id === a.linea_id);
-    snap.push({ id: primerH?.id || '', nombre: primerH?.nombre || 'Herraje', cantidad: 1, precio: Number(primerH?.precio || 0), unidad: primerH?.unidad || 'u' });
+    snap.push({ id: hObj.id, nombre: hObj.nombre, cantidad: cant, precio, unidad: hObj.unidad || 'u' });
     a.herrajes_snap = snap;
     await _guardarHerrajesSnap(a);
+    closeModal();
+    toast('Herraje agregado');
+  } catch(e) {
+    toast('Error al guardar', 'error');
+    setBtnLoading(btn, false);
   } finally {
-    _hideSavingOverlay(abId);
     render();
   }
 }
+
 
 async function eliminarAbertura(id) {
   if (!confirm('¿Eliminar esta abertura? Los costos del presupuesto se recalcularán.')) return;
