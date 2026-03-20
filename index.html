@@ -1315,11 +1315,8 @@ function renderDetalle() {
       // calcularCostoAberturas ya devuelve el costo total para las N unidades (bin packing con cant*piezas)
       const cTotal = c.perfiles + c.vidrios + c.herrajes;
       // Herrajes editables inline — usan snap si existe, sino calculados
-      const herrajesSnap = tryParse(a.herrajes_snap, null);
-      const herrajesEditables = herrajesSnap || (c.herrajesDetalle || []).map(h => ({
-        id: h.id || '', nombre: h.nombre, cantidad: Math.round(h.cantidad / (Number(a.cantidad)||1)),
-        precio: h.precioUnit || 0, unidad: h.unidad || 'u',
-      }));
+      // Usar snap si existe (array en memoria o string parseado), sino detalle calculado
+      const herrajesEditables = _getHerrajesSnapAb(a);
       // Dropdown opciones de herrajes para esta linea
       const herrajesOptsAb = state.herrajes
         .filter(hh => hh.linea_id === a.linea_id)
@@ -2641,12 +2638,16 @@ function _renderHerrajeRow(abId, lineaId, abCantidad, h, hi) {
 // EDICION HERRAJES EN ABERTURA
 // ============================================================
 function _getHerrajesSnapAb(a) {
-  // Devuelve el snap actual de herrajes (por unidad)
-  return tryParse(a.herrajes_snap, null) ||
-    getHerrajesTipo(a.linea_id, a.tipo_id, tryParse(a.params, {})).map(h => {
-      const hObj = state.herrajes.find(x => x.id === h.id);
-      return { id: h.id, nombre: hObj?.nombre || h.descripcion || h.id, cantidad: h.cantidad, precio: Number(hObj?.precio || 0), unidad: hObj?.unidad || 'u' };
-    });
+  // Si ya es array en memoria, usarlo directamente
+  if (Array.isArray(a.herrajes_snap) && a.herrajes_snap.length > 0) return a.herrajes_snap;
+  // Si es string, parsearlo
+  const parsed = tryParse(a.herrajes_snap, null);
+  if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  // Fallback: construir desde tipo (abertura sin snap todavia)
+  return getHerrajesTipo(a.linea_id, a.tipo_id, tryParse(a.params, {})).map(h => {
+    const hObj = state.herrajes.find(x => x.id === h.id);
+    return { id: h.id, nombre: hObj?.nombre || h.descripcion || h.id, cantidad: h.cantidad, precio: Number(hObj?.precio || 0), unidad: hObj?.unidad || 'u' };
+  });
 }
 
 // Muestra overlay de guardado sobre la card de una abertura
@@ -2670,7 +2671,11 @@ function _hideSavingOverlay(abId) {
 }
 
 async function _guardarHerrajesSnap(a) {
-  a.costo_herrajes = (a.herrajes_snap || []).reduce((s, h) => s + h.precio * h.cantidad, 0);
+  // Asegurar que herrajes_snap sea array en memoria
+  if (!Array.isArray(a.herrajes_snap)) {
+    a.herrajes_snap = tryParse(a.herrajes_snap, []);
+  }
+  a.costo_herrajes = a.herrajes_snap.reduce((s, h) => s + Number(h.precio) * Number(h.cantidad), 0);
   await sheetsUpdateRow(SHEETS.aberturas, a.id, {
     herrajes_snap: JSON.stringify(a.herrajes_snap),
     costo_herrajes: a.costo_herrajes,
