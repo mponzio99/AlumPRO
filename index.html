@@ -765,8 +765,11 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   for (const a of abs) {
     const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
-    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
-    const perfilesFiltrados = perfilesDB.filter(pf => pf.linea_id === a.linea_id);
+    // Usar perfiles_snap si existe (precio congelado), sino perfilesDB actual
+    const perfilesEfectivos = (a.perfiles_snap && a.perfiles_snap.length) ? a.perfiles_snap : perfilesDB.filter(pf => pf.linea_id === a.linea_id);
+    const precioKgEfectivo = Number(a.precio_kg) || precioKg;
+    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesEfectivos.length ? perfilesEfectivos : perfilesDB);
+    const perfilesFiltrados = perfilesEfectivos.length ? perfilesEfectivos : perfilesDB.filter(pf => pf.linea_id === a.linea_id);
     const agrupados = {};
     for (const c of cortesRaw) {
       if (!c.perfil) continue;
@@ -774,23 +777,36 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
       if (!agrupados[key]) agrupados[key] = [];
       agrupados[key].push({ largo: c.largo, cantidad: c.cantidad * cant, desc: c.desc });
     }
-    const { barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
+    const { barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKgEfectivo, barrasAcum);
     barrasAcum = barrasFinales;
 
-    // Herrajes — usar config de tipología si existe, sino hardcoded
-    const herrajesCalc = getHerrajesTipo(a.linea_id, a.tipo_id, params);
-    const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
-    herrajesDetalleMap[a.id] = herrajesCalc.map(h => {
-      const hObj = herrajesFiltrados.find(x => x.id === h.id);
-      return {
-        nombre: hObj ? hObj.nombre : (h.descripcion || h.id),
+    // Herrajes — usar herrajes_snap si existe (precio congelado), sino config/DB actual
+    let herrajesDetalleArr;
+    if (a.herrajes_snap && a.herrajes_snap.length) {
+      herrajesDetalleArr = a.herrajes_snap.map(h => ({
+        nombre: h.nombre,
         cantidad: h.cantidad * cant,
-        precioUnit: Number(hObj ? hObj.precio : 0),
-        unidad: hObj ? hObj.unidad : 'u',
-        subtotal: Number(hObj ? hObj.precio : 0) * h.cantidad * cant,
-        desc: h.descripcion || h.desc || '',
-      };
-    });
+        precioUnit: Number(h.precio),
+        unidad: h.unidad || 'u',
+        subtotal: Number(h.precio) * h.cantidad * cant,
+        desc: h.nombre,
+      }));
+    } else {
+      const herrajesCalc = getHerrajesTipo(a.linea_id, a.tipo_id, params);
+      const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
+      herrajesDetalleArr = herrajesCalc.map(h => {
+        const hObj = herrajesFiltrados.find(x => x.id === h.id);
+        return {
+          nombre: hObj ? hObj.nombre : (h.descripcion || h.id),
+          cantidad: h.cantidad * cant,
+          precioUnit: Number(hObj ? hObj.precio : 0),
+          unidad: hObj ? hObj.unidad : 'u',
+          subtotal: Number(hObj ? hObj.precio : 0) * h.cantidad * cant,
+          desc: h.descripcion || h.desc || '',
+        };
+      });
+    }
+    herrajesDetalleMap[a.id] = herrajesDetalleArr;
   }
 
   // Paso 2: mm usados por abertura por perfil (multiplicado por cantidad de aberturas)
@@ -1111,7 +1127,7 @@ async function loadAll() {
       sheetsGet(SHEETS.config),
     ]);
     state.presupuestos = presupuestos;
-    state.aberturas = aberturas.map(a => ({ ...a, params: tryParse(a.params, {}), optimizacion: tryParse(a.optimizacion, []), vidrios: tryParse(a.vidrios, []) }));
+    state.aberturas = aberturas.map(a => ({ ...a, params: tryParse(a.params, {}), optimizacion: tryParse(a.optimizacion, []), vidrios: tryParse(a.vidrios, []), perfiles_snap: tryParse(a.perfiles_snap, null), herrajes_snap: tryParse(a.herrajes_snap, null) }));
     state.lineas     = lineas.length     ? lineas     : LINEAS_DEFAULT;
     state.perfiles   = perfiles.length   ? perfiles   : PERFILES_DEFAULT;
     state.herrajes   = herrajes.length   ? herrajes   : HERRAJES_DEFAULT;
@@ -1298,10 +1314,29 @@ function renderDetalle() {
       const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0, herrajesDetalle: [] };
       // calcularCostoAberturas ya devuelve el costo total para las N unidades (bin packing con cant*piezas)
       const cTotal = c.perfiles + c.vidrios + c.herrajes;
-      const herrajesHtml = (c.herrajesDetalle || []).map(h =>
-        `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);padding:2px 0;">
-          <span>${h.nombre} × ${h.cantidad} ${h.unidad}</span>
-          <span style="font-family:'DM Mono',monospace;">${fmt(h.subtotal)}</span>
+      // Herrajes editables inline — usan snap si existe, sino calculados
+      const herrajesSnap = tryParse(a.herrajes_snap, null);
+      const herrajesEditables = herrajesSnap || (c.herrajesDetalle || []).map(h => ({
+        id: h.id || '', nombre: h.nombre, cantidad: Math.round(h.cantidad / (Number(a.cantidad)||1)),
+        precio: h.precioUnit || 0, unidad: h.unidad || 'u',
+      }));
+      const herrajesHtml = herrajesEditables.map((h, hi) =>
+        `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap;">
+          <span style="flex:1;font-size:12px;color:var(--text2);min-width:120px;">${h.nombre}</span>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="font-size:11px;color:var(--text3);">cant:</span>
+            <input type="number" value="${h.cantidad}" min="0" step="1"
+              style="width:52px;padding:3px 6px;font-size:12px;font-family:'DM Mono',monospace;text-align:center;"
+              onchange="editarHerrajeAbertura('${a.id}',${hi},'cantidad',this.value)">
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="font-size:11px;color:var(--text3);">$:</span>
+            <input type="number" value="${h.precio}" min="0"
+              style="width:80px;padding:3px 6px;font-size:12px;font-family:'DM Mono',monospace;"
+              onchange="editarHerrajeAbertura('${a.id}',${hi},'precio',this.value)">
+          </div>
+          <span style="font-size:12px;font-family:'DM Mono',monospace;color:var(--accent);min-width:70px;text-align:right;">${fmt(h.precio * h.cantidad * (Number(a.cantidad)||1))}</span>
+          <button onclick="eliminarHerrajeAbertura('${a.id}',${hi})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:0 2px;">✕</button>
         </div>`
       ).join('');
 
@@ -1333,10 +1368,13 @@ function renderDetalle() {
               <span style="font-family:'DM Mono',monospace;">${fmt(c.herrajes)}</span>
             </div>
           </div>
-          ${herrajesHtml ? `<div style="flex:1;min-width:180px;">
-            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Herrajes detalle</div>
-            ${herrajesHtml}
-          </div>` : ''}
+          <div style="flex:2;min-width:200px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Herrajes y accesorios</span>
+              <button onclick="agregarHerrajeAbertura('${a.id}')" style="font-size:11px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--text3);cursor:pointer;font-family:'DM Sans',sans-serif;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">+ agregar</button>
+            </div>
+            ${herrajesHtml || '<div style="font-size:12px;color:var(--text3);">Sin herrajes</div>'}
+          </div>
         </div>
       </div>`;
     }).join('');
@@ -1574,6 +1612,50 @@ function renderDetalle() {
       </div>`;
   }
 
+  if (tab === 'comentarios') {
+    const FRASES = [
+      'Presupuesto valido por 15 dias.',
+      'Precios sujetos a modificacion por variacion del precio del aluminio.',
+      'No incluye mano de obra.',
+      'Incluye mano de obra e instalacion.',
+      'Seña del 30% para iniciar la obra.',
+      'Entrega estimada: 20 dias habiles desde aprobacion.',
+      'Vidrios no incluidos en el precio.',
+      'Vidrios incluidos en el precio.',
+      'Premarcos no incluidos.',
+      'Precio final sujeto a medicion en obra.',
+    ];
+    const comentarioActual = p.comentarios || '';
+    const frasesHtml = FRASES.map(f =>
+      '<button onclick="insertarFrase(this.dataset.frase)" data-frase="' + f.replace(/"/g, '&quot;') + '" '
+      + 'style="text-align:left;padding:7px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;'
+      + 'color:var(--text2);cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;width:100%;" '
+      + 'onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" '
+      + 'onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">'
+      + f + '</button>'
+    ).join('');
+    tabContent = `
+      <div style="display:flex;gap:20px;flex-wrap:wrap;">
+        <div style="flex:2;min-width:280px;">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Texto del comentario</div>
+          <textarea id="comentarioTextarea" rows="10"
+            style="width:100%;padding:12px 14px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;resize:vertical;outline:none;"
+            placeholder="Ingresa las condiciones, notas y aclaraciones del presupuesto..."
+            onchange="guardarComentario(this.value)"
+            oninput="this.style.borderColor='var(--accent)'"
+            onblur="guardarComentario(this.value);this.style.borderColor='var(--border2)'"
+          >${comentarioActual}</textarea>
+          <div style="font-size:11px;color:var(--text3);margin-top:6px;">Se imprime al final del PDF y Word.</div>
+        </div>
+        <div style="flex:1;min-width:220px;">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Frases rapidas</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${frasesHtml}
+          </div>
+        </div>
+      </div>`;
+  }
+
   return `
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
     <button class="back-btn" onclick="navigate('presupuestos')">← Volver</button>
@@ -1598,6 +1680,7 @@ function renderDetalle() {
     <button class="tab ${tab==='aberturas'?'active':''}" onclick="setTab('aberturas')">Aberturas</button>
     <button class="tab ${tab==='calculo'?'active':''}" onclick="setTab('calculo')">Materiales</button>
     <button class="tab ${tab==='resumen'?'active':''}" onclick="setTab('resumen')">Resumen</button>
+    <button class="tab ${tab==='comentarios'?'active':''}" onclick="setTab('comentarios')">Comentarios</button>
   </div>
   ${tabContent}`;
 }
@@ -1756,6 +1839,10 @@ function renderConfig() {
   const tipoTabs = tiposDeLinea.map(t =>
     '<button class="tab '+(tipoActivo===t.id?'active':'')+'" onclick="setConfigTipo(\''+t.id+'\')" style="font-size:12px;padding:8px 14px;">'+t.nombre+'</button>'
   ).join('');
+  const esCustomActivo = state.tipologias_custom.some(t => t.id === tipoActivo);
+  const btnEliminarTipo = esCustomActivo
+    ? '<button class="btn-danger" style="font-size:12px;padding:4px 12px;margin-left:12px;" onclick="eliminarTipologiaCustom(\'' + tipoActivo + '\')">Eliminar tipologia</button>'
+    : '';
 
   const cfg = getConfigTipo(lineaActiva, tipoActivo);
   const perfilesConfigRows = cfg && cfg.perfiles.length > 0 ? cfg.perfiles.map((pf, idx) => {
@@ -1796,20 +1883,7 @@ function renderConfig() {
     <div style="font-size:11px;color:var(--text3);margin-top:8px;">Variables disponibles: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">W</code> ancho vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">H</code> alto vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">N</code> cantidad de hojas</div>
   ` : '';
 
-  // Badges de tipologias custom con boton eliminar
-  const customDeLinea = state.tipologias_custom.filter(t => t.linea_id === lineaActiva);
-  const customTiposBadges = customDeLinea.length > 0
-    ? '<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;">'
-      + customDeLinea.map(t =>
-          '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;'
-          + 'background:#A855F722;border:1px solid #A855F744;border-radius:20px;font-size:12px;color:#A855F7;">'
-          + t.nombre + ' '
-          + '<button onclick="eliminarTipologiaCustom(&#39;' + t.id + '&#39;)" '
-          + 'style="background:none;border:none;cursor:pointer;color:#A855F7;font-size:13px;line-height:1;padding:0;">x</button>'
-          + '</span>'
-        ).join('')
-      + '</div>'
-    : '';
+  const customTiposBadges = ''; // etiquetas removidas
 
   // Construir tabla de herrajes configurables para la tipología activa
   const herrajesConfigList = cfg && cfg.herrajes ? cfg.herrajes
@@ -1908,10 +1982,12 @@ function renderConfig() {
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
       <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Tipo de abertura</span>
-      <button class="btn-secondary" style="font-size:12px;padding:5px 12px;" onclick="showModalNuevaTipologia('${lineaActiva}')">+ Nueva tipología</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        ${btnEliminarTipo}
+        <button class="btn-secondary" style="font-size:12px;padding:5px 12px;" onclick="showModalNuevaTipologia('${lineaActiva}')">+ Nueva tipologia</button>
+      </div>
     </div>
-    <div class="tabs" style="margin-bottom:8px;">${tipoTabs}</div>
-    ${customTiposBadges}
+    <div class="tabs" style="margin-bottom:16px;">${tipoTabs}</div>
 
     <div class="table-wrap">
       <table>
@@ -2210,6 +2286,24 @@ async function actualizarMarkup(val) {
   p.markup = mk; p.total_final = total;
   await sheetsUpdateRow(SHEETS.presupuestos, p.id, { markup: mk, total_final: total });
   render();
+}
+
+async function guardarComentario(texto) {
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (!p) return;
+  p.comentarios = texto;
+  await sheetsUpdateRow(SHEETS.presupuestos, p.id, { comentarios: texto });
+}
+
+function insertarFrase(frase) {
+  const ta = document.getElementById('comentarioTextarea');
+  if (!ta) return;
+  const sep = ta.value && !ta.value.endsWith('
+') ? '
+' : '';
+  ta.value = ta.value + sep + frase;
+  guardarComentario(ta.value);
+  ta.focus();
 }
 
 async function moverKanban(id, col) {
@@ -2541,6 +2635,68 @@ async function confirmarPasarAConstruccion() {
     toast('Error al actualizar stock', 'error');
     setBtnLoading(btn, false);
   }
+}
+
+// ============================================================
+// EDICION HERRAJES EN ABERTURA
+// ============================================================
+function _getHerrajesSnapAb(a) {
+  // Devuelve el snap actual de herrajes (por unidad)
+  return tryParse(a.herrajes_snap, null) ||
+    getHerrajesTipo(a.linea_id, a.tipo_id, tryParse(a.params, {})).map(h => {
+      const hObj = state.herrajes.find(x => x.id === h.id);
+      return { id: h.id, nombre: hObj?.nombre || h.descripcion || h.id, cantidad: h.cantidad, precio: Number(hObj?.precio || 0), unidad: hObj?.unidad || 'u' };
+    });
+}
+
+async function editarHerrajeAbertura(abId, hi, campo, valor) {
+  const a = state.aberturas.find(x => x.id === abId);
+  if (!a) return;
+  const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
+  if (!snap[hi]) return;
+  snap[hi][campo] = campo === 'precio' ? Number(valor) : Number(valor);
+  a.herrajes_snap = snap;
+  // Recalcular costo_herrajes (1 unidad)
+  const cant = Number(a.cantidad) || 1;
+  a.costo_herrajes = snap.reduce((s, h) => s + h.precio * h.cantidad, 0);
+  await sheetsUpdateRow(SHEETS.aberturas, abId, {
+    herrajes_snap: JSON.stringify(snap),
+    costo_herrajes: a.costo_herrajes,
+  });
+  await recalcularTotal();
+  render();
+}
+
+async function eliminarHerrajeAbertura(abId, hi) {
+  const a = state.aberturas.find(x => x.id === abId);
+  if (!a) return;
+  const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
+  snap.splice(hi, 1);
+  a.herrajes_snap = snap;
+  a.costo_herrajes = snap.reduce((s, h) => s + h.precio * h.cantidad, 0);
+  await sheetsUpdateRow(SHEETS.aberturas, abId, {
+    herrajes_snap: JSON.stringify(snap),
+    costo_herrajes: a.costo_herrajes,
+  });
+  await recalcularTotal();
+  render();
+}
+
+async function agregarHerrajeAbertura(abId) {
+  const a = state.aberturas.find(x => x.id === abId);
+  if (!a) return;
+  const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
+  // Agregar primer herraje disponible de la linea como punto de partida
+  const primerH = state.herrajes.find(h => h.linea_id === a.linea_id);
+  snap.push({ id: primerH?.id || '', nombre: primerH?.nombre || 'Herraje', cantidad: 1, precio: Number(primerH?.precio || 0), unidad: primerH?.unidad || 'u' });
+  a.herrajes_snap = snap;
+  a.costo_herrajes = snap.reduce((s, h) => s + h.precio * h.cantidad, 0);
+  await sheetsUpdateRow(SHEETS.aberturas, abId, {
+    herrajes_snap: JSON.stringify(snap),
+    costo_herrajes: a.costo_herrajes,
+  });
+  await recalcularTotal();
+  render();
 }
 
 async function eliminarAbertura(id) {
@@ -2936,6 +3092,19 @@ async function confirmarAgregarAbertura() {
     if (!res) return;
 
     const linea = state.lineas.find(l => l.id === linea_id);
+
+    // Snapshot de perfiles al momento de carga (congela peso y precio/kg)
+    const perfilesSnap = state.perfiles
+      .filter(pf => pf.linea_id === linea_id)
+      .map(pf => ({ id: pf.id, codigo: pf.codigo, nombre: pf.nombre, peso_tira: pf.peso_tira, largo_barra: pf.largo_barra }));
+
+    // Snapshot de herrajes al momento de carga (congela precio)
+    const herrajesCalcSnap = getHerrajesTipo(linea_id, tipoId, params);
+    const herrajesSnap = herrajesCalcSnap.map(h => {
+      const hObj = state.herrajes.find(x => x.id === h.id);
+      return { id: h.id, nombre: hObj?.nombre || h.descripcion || h.id, cantidad: h.cantidad, precio: Number(hObj?.precio || 0), unidad: hObj?.unidad || 'u' };
+    });
+
     const ab = {
       id: genId(),
       presupuesto_id: state.presupuestoActivo,
@@ -2952,6 +3121,8 @@ async function confirmarAgregarAbertura() {
       costo_herrajes: res.costoHerrajes,
       optimizacion: JSON.stringify(res.optimizacion),
       vidrios:      JSON.stringify(res.vidrios),
+      perfiles_snap: JSON.stringify(perfilesSnap),
+      herrajes_snap: JSON.stringify(herrajesSnap),
     };
     state.aberturas.push(ab);
     await sheetsAppend(SHEETS.aberturas, ab);
@@ -3327,7 +3498,11 @@ function imprimirPresupuesto(id) {
       +'<div><div style="font-size:11px;color:#94a3b8;text-align:right;margin-bottom:2px;">TOTAL</div>'
       +'<div style="font-size:26px;font-weight:800;color:#00b37e;">'+fmt(totalFinal)+'</div></div>'
     +'</div>'
-    +'<div style="margin-top:24px;text-align:center;font-size:11px;color:#cbd5e1;">Presupuesto generado por AlumPro - Valido por 15 dias</div>'
+    +(p.comentarios ? '<div style="margin-top:24px;padding:16px 20px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">'
+      +'<div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Condiciones y notas</div>'
+      +'<div style="font-size:12px;color:#475569;white-space:pre-line;">'+p.comentarios+'</div>'
+      +'</div>' : '')
+    +'<div style="margin-top:24px;text-align:center;font-size:11px;color:#cbd5e1;">Presupuesto generado por AlumPro</div>'
     +ST+'</body></html>';
 
   const win = window.open('', '_blank');
@@ -3420,7 +3595,11 @@ async function exportarWord(id) {
       +'<div class="total-valor">'+fmt(totalFinal)+'</div>'
     +'</div>'
     +'<p style="font-size:9pt;color:#64748b;margin-top:12px">Notas adicionales:<br><br>___________________________________________________________________________<br><br>___________________________________________________________________________</p>'
-    +'<div class="footer">Presupuesto generado por AlumPro · Valido por 15 dias</div>'
+    +(p.comentarios ? '<div style="margin-top:24px;padding:14px 18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">'
+      +'<div style="font-size:9pt;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Condiciones y notas</div>'
+      +'<div style="font-size:10pt;color:#475569;white-space:pre-line;">'+p.comentarios+'</div>'
+      +'</div>' : '')
+    +'<div class="footer">Presupuesto generado por AlumPro</div>'
     +'</body></html>';
 
   const blob = new Blob(['\ufeff' + html], { type: 'application/msword;charset=utf-8' });
