@@ -1320,25 +1320,41 @@ function renderDetalle() {
         id: h.id || '', nombre: h.nombre, cantidad: Math.round(h.cantidad / (Number(a.cantidad)||1)),
         precio: h.precioUnit || 0, unidad: h.unidad || 'u',
       }));
-      const herrajesHtml = herrajesEditables.map((h, hi) =>
-        `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap;">
-          <span style="flex:1;font-size:12px;color:var(--text2);min-width:120px;">${h.nombre}</span>
-          <div style="display:flex;align-items:center;gap:4px;">
-            <span style="font-size:11px;color:var(--text3);">cant:</span>
-            <input type="number" value="${h.cantidad}" min="0" step="1"
-              style="width:52px;padding:3px 6px;font-size:12px;font-family:'DM Mono',monospace;text-align:center;"
-              onchange="editarHerrajeAbertura('${a.id}',${hi},'cantidad',this.value)">
-          </div>
-          <div style="display:flex;align-items:center;gap:4px;">
-            <span style="font-size:11px;color:var(--text3);">$:</span>
-            <input type="number" value="${h.precio}" min="0"
-              style="width:80px;padding:3px 6px;font-size:12px;font-family:'DM Mono',monospace;"
-              onchange="editarHerrajeAbertura('${a.id}',${hi},'precio',this.value)">
-          </div>
-          <span style="font-size:12px;font-family:'DM Mono',monospace;color:var(--accent);min-width:70px;text-align:right;">${fmt(h.precio * h.cantidad * (Number(a.cantidad)||1))}</span>
-          <button onclick="eliminarHerrajeAbertura('${a.id}',${hi})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:0 2px;">✕</button>
-        </div>`
-      ).join('');
+      // Dropdown opciones de herrajes para esta linea
+      const herrajesOptsAb = state.herrajes
+        .filter(hh => hh.linea_id === a.linea_id)
+        .map(hh => hh.id + '|' + hh.nombre + '|' + hh.precio + '|' + (hh.unidad||'u'))
+        .join(',');
+
+      const herrajesHtml = herrajesEditables.map((h, hi) => {
+        const selectOpts = state.herrajes
+          .filter(hh => hh.linea_id === a.linea_id)
+          .map(hh => '<option value="' + hh.id + '"' + (hh.id === h.id ? ' selected' : '') + '>' + hh.nombre + '</option>')
+          .join('');
+        return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;flex-wrap:wrap;border-bottom:1px solid var(--border);last-child:border:none;">'
+          + '<select style="flex:1;min-width:130px;font-size:12px;padding:3px 6px;" '
+          +   'onchange="cambiarTipoHerrajeAbertura('' + a.id + '',' + hi + ',this.value)">'
+          +   selectOpts
+          + '</select>'
+          + '<div style="display:flex;align-items:center;gap:3px;">'
+          +   '<span style="font-size:11px;color:var(--text3);">x</span>'
+          +   '<input type="number" value="' + h.cantidad + '" min="0" step="1" '
+          +     'style="width:50px;padding:3px 5px;font-size:12px;font-family:'DM Mono',monospace;text-align:center;" '
+          +     'onchange="editarHerrajeAbertura('' + a.id + '',' + hi + ','cantidad',this.value)">'
+          + '</div>'
+          + '<div style="display:flex;align-items:center;gap:3px;">'
+          +   '<span style="font-size:11px;color:var(--text3);">$</span>'
+          +   '<input type="number" value="' + h.precio + '" min="0" '
+          +     'style="width:78px;padding:3px 5px;font-size:12px;font-family:'DM Mono',monospace;" '
+          +     'onchange="editarHerrajeAbertura('' + a.id + '',' + hi + ','precio',this.value)">'
+          + '</div>'
+          + '<span style="font-size:12px;font-family:'DM Mono',monospace;color:var(--accent);min-width:68px;text-align:right;">'
+          +   fmt(h.precio * h.cantidad * (Number(a.cantidad)||1))
+          + '</span>'
+          + '<button onclick="eliminarHerrajeAbertura('' + a.id + '',' + hi + ')" '
+          +   'style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:0 2px;">x</button>'
+        + '</div>';
+      }).join('');
 
       return `
       <div class="ab-card" style="flex-direction:column;gap:10px;">
@@ -2646,54 +2662,101 @@ function _getHerrajesSnapAb(a) {
     });
 }
 
-async function editarHerrajeAbertura(abId, hi, campo, valor) {
-  const a = state.aberturas.find(x => x.id === abId);
-  if (!a) return;
-  const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
-  if (!snap[hi]) return;
-  snap[hi][campo] = campo === 'precio' ? Number(valor) : Number(valor);
-  a.herrajes_snap = snap;
-  // Recalcular costo_herrajes (1 unidad)
-  const cant = Number(a.cantidad) || 1;
-  a.costo_herrajes = snap.reduce((s, h) => s + h.precio * h.cantidad, 0);
-  await sheetsUpdateRow(SHEETS.aberturas, abId, {
-    herrajes_snap: JSON.stringify(snap),
+// Muestra overlay de guardado sobre la card de una abertura
+function _showSavingOverlay(abId) {
+  const cards = document.querySelectorAll('.ab-card');
+  // Buscar la card que contiene botones con el abId
+  for (const card of cards) {
+    if (card.innerHTML.includes(abId)) {
+      const ov = document.createElement('div');
+      ov.id = 'saving_' + abId;
+      ov.style.cssText = 'position:absolute;inset:0;background:rgba(10,15,30,0.6);border-radius:12px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--text2);font-size:13px;z-index:10;';
+      ov.innerHTML = '<div class="spinner"></div> Guardando...';
+      card.style.position = 'relative';
+      card.appendChild(ov);
+      return;
+    }
+  }
+}
+function _hideSavingOverlay(abId) {
+  document.getElementById('saving_' + abId)?.remove();
+}
+
+async function _guardarHerrajesSnap(a) {
+  a.costo_herrajes = (a.herrajes_snap || []).reduce((s, h) => s + h.precio * h.cantidad, 0);
+  await sheetsUpdateRow(SHEETS.aberturas, a.id, {
+    herrajes_snap: JSON.stringify(a.herrajes_snap),
     costo_herrajes: a.costo_herrajes,
   });
   await recalcularTotal();
-  render();
+}
+
+async function cambiarTipoHerrajeAbertura(abId, hi, herrajeId) {
+  const a = state.aberturas.find(x => x.id === abId);
+  if (!a) return;
+  const hObj = state.herrajes.find(h => h.id === herrajeId);
+  if (!hObj) return;
+  _showSavingOverlay(abId);
+  try {
+    const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
+    if (!snap[hi]) return;
+    snap[hi].id = hObj.id;
+    snap[hi].nombre = hObj.nombre;
+    snap[hi].precio = Number(hObj.precio);
+    snap[hi].unidad = hObj.unidad || 'u';
+    a.herrajes_snap = snap;
+    await _guardarHerrajesSnap(a);
+  } finally {
+    _hideSavingOverlay(abId);
+    render();
+  }
+}
+
+async function editarHerrajeAbertura(abId, hi, campo, valor) {
+  const a = state.aberturas.find(x => x.id === abId);
+  if (!a) return;
+  _showSavingOverlay(abId);
+  try {
+    const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
+    if (!snap[hi]) return;
+    snap[hi][campo] = Number(valor);
+    a.herrajes_snap = snap;
+    await _guardarHerrajesSnap(a);
+  } finally {
+    _hideSavingOverlay(abId);
+    render();
+  }
 }
 
 async function eliminarHerrajeAbertura(abId, hi) {
   const a = state.aberturas.find(x => x.id === abId);
   if (!a) return;
-  const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
-  snap.splice(hi, 1);
-  a.herrajes_snap = snap;
-  a.costo_herrajes = snap.reduce((s, h) => s + h.precio * h.cantidad, 0);
-  await sheetsUpdateRow(SHEETS.aberturas, abId, {
-    herrajes_snap: JSON.stringify(snap),
-    costo_herrajes: a.costo_herrajes,
-  });
-  await recalcularTotal();
-  render();
+  _showSavingOverlay(abId);
+  try {
+    const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
+    snap.splice(hi, 1);
+    a.herrajes_snap = snap;
+    await _guardarHerrajesSnap(a);
+  } finally {
+    _hideSavingOverlay(abId);
+    render();
+  }
 }
 
 async function agregarHerrajeAbertura(abId) {
   const a = state.aberturas.find(x => x.id === abId);
   if (!a) return;
-  const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
-  // Agregar primer herraje disponible de la linea como punto de partida
-  const primerH = state.herrajes.find(h => h.linea_id === a.linea_id);
-  snap.push({ id: primerH?.id || '', nombre: primerH?.nombre || 'Herraje', cantidad: 1, precio: Number(primerH?.precio || 0), unidad: primerH?.unidad || 'u' });
-  a.herrajes_snap = snap;
-  a.costo_herrajes = snap.reduce((s, h) => s + h.precio * h.cantidad, 0);
-  await sheetsUpdateRow(SHEETS.aberturas, abId, {
-    herrajes_snap: JSON.stringify(snap),
-    costo_herrajes: a.costo_herrajes,
-  });
-  await recalcularTotal();
-  render();
+  _showSavingOverlay(abId);
+  try {
+    const snap = _getHerrajesSnapAb(a).map(h => ({...h}));
+    const primerH = state.herrajes.find(h => h.linea_id === a.linea_id);
+    snap.push({ id: primerH?.id || '', nombre: primerH?.nombre || 'Herraje', cantidad: 1, precio: Number(primerH?.precio || 0), unidad: primerH?.unidad || 'u' });
+    a.herrajes_snap = snap;
+    await _guardarHerrajesSnap(a);
+  } finally {
+    _hideSavingOverlay(abId);
+    render();
+  }
 }
 
 async function eliminarAbertura(id) {
