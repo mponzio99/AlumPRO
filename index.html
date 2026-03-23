@@ -783,9 +783,12 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
     barrasAcum = barrasFinales;
 
     // Herrajes — usar herrajes_snap si existe (precio congelado), sino config/DB actual
+    // Normalizar: puede llegar como string del Sheet o como array en memoria
+    const snapH = Array.isArray(a.herrajes_snap) ? a.herrajes_snap
+      : (Array.isArray(tryParse(a.herrajes_snap, null)) ? tryParse(a.herrajes_snap, null) : null);
     let herrajesDetalleArr;
-    if (a.herrajes_snap && a.herrajes_snap.length) {
-      herrajesDetalleArr = a.herrajes_snap.map(h => ({
+    if (snapH && snapH.length > 0) {
+      herrajesDetalleArr = snapH.map(h => ({
         nombre: h.nombre,
         cantidad: h.cantidad * cant,
         precioUnit: Number(h.precio),
@@ -1131,7 +1134,7 @@ async function loadAll() {
       sheetsGet(SHEETS.config),
     ]);
     state.presupuestos = presupuestos;
-    state.aberturas = aberturas.map(a => ({ ...a, params: tryParse(a.params, {}), optimizacion: tryParse(a.optimizacion, []), vidrios: tryParse(a.vidrios, []), perfiles_snap: tryParse(a.perfiles_snap, null), herrajes_snap: tryParse(a.herrajes_snap, null) }));
+    state.aberturas = aberturas.map(a => ({ ...a, params: tryParse(a.params, {}), optimizacion: tryParse(a.optimizacion, []), vidrios: tryParse(a.vidrios, []), perfiles_snap: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : null; })(a.perfiles_snap), herrajes_snap: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : null; })(a.herrajes_snap) }));
     state.lineas     = lineas.length     ? lineas     : LINEAS_DEFAULT;
     state.perfiles   = perfiles.length   ? perfiles   : PERFILES_DEFAULT;
     state.herrajes   = herrajes.length   ? herrajes   : HERRAJES_DEFAULT;
