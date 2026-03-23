@@ -765,8 +765,10 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   for (const a of abs) {
     const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
-    // Usar perfiles_snap si existe (precio congelado), sino perfilesDB actual
-    const perfilesEfectivos = (a.perfiles_snap && a.perfiles_snap.length) ? a.perfiles_snap : perfilesDB.filter(pf => pf.linea_id === a.linea_id);
+    // Usar perfiles_snap si existe y es array válido (precio congelado), sino perfilesDB actual
+    const snapPerfiles = Array.isArray(a.perfiles_snap) ? a.perfiles_snap
+      : (Array.isArray(tryParse(a.perfiles_snap, null)) ? tryParse(a.perfiles_snap, null) : null);
+    const perfilesEfectivos = (snapPerfiles && snapPerfiles.length > 0) ? snapPerfiles : perfilesDB.filter(pf => pf.linea_id === a.linea_id);
     const precioKgEfectivo = Number(a.precio_kg) || precioKg;
     const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesEfectivos.length ? perfilesEfectivos : perfilesDB);
     const perfilesFiltrados = perfilesEfectivos.length ? perfilesEfectivos : perfilesDB.filter(pf => pf.linea_id === a.linea_id);
@@ -814,7 +816,9 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   for (const a of abs) {
     const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
-    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
+    const snapP2 = Array.isArray(a.perfiles_snap) ? a.perfiles_snap : (Array.isArray(tryParse(a.perfiles_snap, null)) ? tryParse(a.perfiles_snap, null) : null);
+    const perfilesP2 = (snapP2 && snapP2.length > 0) ? snapP2 : perfilesDB;
+    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesP2);
     mmPorAb[a.id] = {};
     for (const c of cortesRaw) {
       if (!c.perfil) continue;
