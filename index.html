@@ -709,10 +709,8 @@ function getBarrasExistentes(absExistentes, perfilesDB) {
 
 
 function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesDB, precioVidrio, precioKg, barrasExistentes) {
-  const tipos = TIPOS_ABERTURA[linea_id];
-  if (!tipos) return null;
-  const tipo = tipos.find(t => t.id === tipo_id);
-  if (!tipo) return null;
+  const tipos = TIPOS_ABERTURA[linea_id] || [];
+  const tipo = tipos.find(t => t.id === tipo_id) || null; // null para custom — OK, getCortesRaw usa config
   const perfilesFiltrados = perfilesDB.filter(p => p.linea_id === linea_id);
   const N = Number(params.hojas) || 1;
   const cfg = getConfigTipo(linea_id, tipo_id);
@@ -3151,7 +3149,7 @@ async function confirmarAgregarAbertura() {
     const H        = parseInt(document.getElementById('m_alto')?.value);
     const cant     = parseInt(document.getElementById('m_cant')?.value) || 1;
     const pVid     = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
-    if (!W || !H) return;
+    if (!W || !H) { setBtnLoading(btn, false); return; }
 
     const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKg = getPrecioKgPresupuesto(p);
@@ -3163,7 +3161,7 @@ async function confirmarAgregarAbertura() {
     const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
     const barrasExistentes = getBarrasExistentes(absExistentes, state.perfiles);
     const res = calcularAbertura(linea_id, tipoId, W, H, params, state.perfiles, state.herrajes, pVid, precioKg, barrasExistentes);
-    if (!res) return;
+    if (!res) { toast('Error al calcular la abertura', 'error'); setBtnLoading(btn, false); return; }
 
     const linea = state.lineas.find(l => l.id === linea_id);
 
