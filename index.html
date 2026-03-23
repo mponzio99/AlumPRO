@@ -581,7 +581,11 @@ const TIPOS_ABERTURA = {
 
 // Obtiene los cortes raw de una abertura sin calcular costos
 function getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB) {
-  const perfilesFiltrados = perfilesDB.filter(p => p.linea_id === linea_id);
+  // Si los perfiles ya están pre-filtrados (snap sin linea_id), usarlos directamente
+  const tienenLineaId = perfilesDB.some(p => p.linea_id);
+  const perfilesFiltrados = tienenLineaId
+    ? perfilesDB.filter(p => p.linea_id === linea_id)
+    : perfilesDB;
   const N = Number(params?.hojas) || 1;
   const cfg = getConfigTipo(linea_id, tipo_id);
   // Si hay config (custom o editada), siempre usarla
@@ -3166,7 +3170,7 @@ async function confirmarAgregarAbertura() {
     // Snapshot de perfiles al momento de carga (congela peso y precio/kg)
     const perfilesSnap = state.perfiles
       .filter(pf => pf.linea_id === linea_id)
-      .map(pf => ({ id: pf.id, codigo: pf.codigo, nombre: pf.nombre, peso_tira: pf.peso_tira, largo_barra: pf.largo_barra }));
+      .map(pf => ({ id: pf.id, linea_id: pf.linea_id, codigo: pf.codigo, nombre: pf.nombre, peso_tira: pf.peso_tira, largo_barra: pf.largo_barra }));
 
     // Snapshot de herrajes al momento de carga (congela precio)
     const herrajesCalcSnap = getHerrajesTipo(linea_id, tipoId, params);
