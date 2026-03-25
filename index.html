@@ -1839,29 +1839,9 @@ function renderConfig() {
     : '';
 
   const cfg = getConfigTipo(lineaActiva, tipoActivo);
-  const perfilesConfigRows = cfg && cfg.perfiles.length > 0 ? cfg.perfiles.map((pf, idx) => {
-    const condColor = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF' : '#A855F7') : 'var(--text3)';
-    const condBg    = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF22' : '#A855F722') : 'transparent';
-    return `
-    <tr style="${pf.solo_si_n ? 'background:'+condBg+';' : ''}">
-      <td>
-        ${pf.solo_si_n ? '<span style="font-size:10px;font-weight:700;color:'+condColor+';margin-right:6px;border:1px solid '+condColor+';padding:1px 5px;border-radius:3px;">N='+pf.solo_si_n+'</span>' : ''}
-        <input value="${pf.rol||''}" placeholder="Ej: Jamba lateral" style="width:140px;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'rol',this.value)">
-      </td>
-      <td><input value="${pf.codigo}" style="width:80px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'codigo',this.value)"></td>
-      <td><input value="${pf.cantidad}" style="width:70px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'cantidad',this.value)"></td>
-      <td><input value="${pf.formula_largo}" placeholder="Ej: W - 42" style="width:160px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'formula_largo',this.value)"></td>
-      <td>
-        <select style="width:70px;font-size:12px;" onchange="updateConfigPerfil('${lineaActiva}','${tipoActivo}',${idx},'solo_si_n',this.value)">
-          <option value="" ${!pf.solo_si_n?'selected':''}>Siempre</option>
-          <option value="2" ${pf.solo_si_n==='2'?'selected':''}>N = 2</option>
-          <option value="3" ${pf.solo_si_n==='3'?'selected':''}>N = 3</option>
-          <option value="4" ${pf.solo_si_n==='4'?'selected':''}>N = 4</option>
-        </select>
-      </td>
-      <td><button class="btn-danger" onclick="eliminarConfigPerfil('${lineaActiva}','${tipoActivo}',${idx})">✕</button></td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="6" style="color:var(--text3);padding:16px;text-align:center;">Sin perfiles configurados. Usa "+ Agregar perfil" para empezar.</td></tr>';
+  const perfilesConfigRows = cfg && cfg.perfiles.length > 0
+    ? cfg.perfiles.map((pf, idx) => _renderPerfilConfigRow(lineaActiva, tipoActivo, pf, idx)).join('')
+    : '<tr><td colspan="6" style="color:var(--text3);padding:16px;text-align:center;">Sin perfiles configurados. Usa &quot;+ Agregar perfil&quot; para empezar.</td></tr>';
 
   const vidrioConfig = cfg ? `
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
@@ -1985,7 +1965,7 @@ function renderConfig() {
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Rol del perfil</th><th>Codigo</th><th>Cantidad</th><th>Formula largo (mm)</th><th>Solo si N=</th><th></th></tr></thead>
+        <thead><tr><th>Rol / descripcion</th><th>Perfil</th><th>Cantidad</th><th>Formula largo (mm)</th><th>Solo si N=</th><th></th></tr></thead>
         <tbody>${perfilesConfigRows}</tbody>
       </table>
     </div>
@@ -2064,6 +2044,54 @@ function updateConfigVidrio(linea_id, tipo_id, campo, valor) {
   cfg.vidrio[campo] = valor;
   saveConfigTipo(linea_id, tipo_id);
   toast('Guardado');
+}
+
+// Helper: renderiza una fila de config de perfil con dropdown
+function _renderPerfilConfigRow(la, ta, pf, idx) {
+  const condColor = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF' : '#A855F7') : 'var(--text3)';
+  const condBg    = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF22' : '#A855F722') : 'transparent';
+  const badgeN = pf.solo_si_n
+    ? '<span style="font-size:10px;font-weight:700;color:'+condColor+';margin-right:4px;border:1px solid '+condColor+';padding:1px 5px;border-radius:3px;">N='+pf.solo_si_n+'</span>' : '';
+  const perfilesLinea = state.perfiles.filter(p => p.linea_id === la);
+  const selectOpts = perfilesLinea.map(p =>
+    '<option value="'+p.codigo+'"'+(p.codigo===pf.codigo?' selected':'')+'>['+p.codigo+'] '+p.nombre+'</option>'
+  ).join('');
+  // Use \x27 escaped single quotes in HTML attribute values
+  const sq = '\x27';
+  return '<tr style="'+(pf.solo_si_n?'background:'+condBg+';':'')+'">'
+    +'<td>'+badgeN
+    +'<input value="'+( pf.rol||'')+'" placeholder="Ej: Jamba lateral" style="width:120px;font-size:12px;" '
+    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'rol'+sq+',this.value)"></td>'
+    +'<td><select style="min-width:195px;font-size:12px;" '
+    +'onchange="seleccionarPerfilConfig('+sq+la+sq+','+sq+ta+sq+','+idx+',this.value)">'
+    +'<option value="">-- Seleccionar --</option>'+selectOpts+'</select></td>'
+    +'<td><input value="'+pf.cantidad+'" style="width:58px;font-family:monospace;font-size:13px;" '
+    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'cantidad'+sq+',this.value)"></td>'
+    +'<td><input value="'+(pf.formula_largo||'')+'" placeholder="Ej: W - 42" style="width:145px;font-family:monospace;font-size:13px;" '
+    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'formula_largo'+sq+',this.value)"></td>'
+    +'<td><select style="width:68px;font-size:12px;" '
+    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'solo_si_n'+sq+',this.value)">'
+    +'<option value=""'+ (!pf.solo_si_n?' selected':'')+'>Siempre</option>'
+    +'<option value="2"'+(pf.solo_si_n==='2'?' selected':'')+'>N = 2</option>'
+    +'<option value="3"'+(pf.solo_si_n==='3'?' selected':'')+'>N = 3</option>'
+    +'<option value="4"'+(pf.solo_si_n==='4'?' selected':'')+'>N = 4</option>'
+    +'</select></td>'
+    +'<td><button class="btn-danger" '
+    +'onclick="eliminarConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+')">x</button></td>'
+    +'</tr>';
+}
+
+// Al seleccionar un perfil del dropdown, actualiza codigo y rol
+function seleccionarPerfilConfig(linea_id, tipo_id, idx, codigo) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  if (!cfg.perfiles[idx]) return;
+  cfg.perfiles[idx].codigo = codigo;
+  if (!cfg.perfiles[idx].rol) {
+    const perfil = state.perfiles.find(p => p.codigo === codigo && p.linea_id === linea_id);
+    if (perfil) cfg.perfiles[idx].rol = perfil.nombre;
+  }
+  saveConfigTipo(linea_id, tipo_id);
+  render();
 }
 
 // ============================================================
