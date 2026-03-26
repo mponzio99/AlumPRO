@@ -2052,47 +2052,49 @@ function _renderPerfilConfigRow(la, ta, pf, idx) {
   const condBg    = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF22' : '#A855F722') : 'transparent';
   const badgeN = pf.solo_si_n
     ? '<span style="font-size:10px;font-weight:700;color:'+condColor+';margin-right:5px;border:1px solid '+condColor+';padding:1px 5px;border-radius:3px;">N='+pf.solo_si_n+'</span>' : '';
-  const s = String.fromCharCode(39);
   const rowStyle = pf.solo_si_n ? 'background:'+condBg+';' : '';
+  const sq = String.fromCharCode(39);
 
-  // Column 1: if new row (no codigo) show dropdown, else show read-only label
+  // Normalizar: usar codigo||id en todos lados
+  const perfilesLinea = state.perfiles.filter(p => p.linea_id === la);
+
   let col1;
   if (!pf.codigo) {
-    const perfilesLinea = state.perfiles.filter(p => p.linea_id === la);
-    const selectOpts = perfilesLinea.map(p =>
-      '<option value="'+p.codigo+'|'+p.id+'">['+p.codigo+'] '+p.nombre+'</option>'
-    ).join('');
+    // Fila nueva: mostrar dropdown
+    const selectOpts = perfilesLinea.map(p => {
+      const cod = p.codigo || p.id || '';
+      return '<option value="'+cod+'">'+( cod ? '['+cod+'] ' : '')+p.nombre+'</option>';
+    }).join('');
     col1 = badgeN
-      + '<select style="min-width:210px;font-size:12px;" '
-      + 'onchange="seleccionarPerfilConfig('+s+la+s+','+s+ta+s+','+idx+',this.value)">'
+      + '<select style="min-width:220px;font-size:12px;" '
+      + 'onchange="seleccionarPerfilConfig('+sq+la+sq+','+sq+ta+sq+','+idx+',this.value)">'
       + '<option value="">-- Seleccionar perfil --</option>'
       + selectOpts
       + '</select>';
   } else {
-    // Find name from perfiles or use stored rol
-    const perfilObj = state.perfiles.find(p => p.codigo === pf.codigo && p.linea_id === la)
-      || state.perfiles.find(p => p.codigo === pf.codigo);
-    const displayName = perfilObj
-      ? '['+pf.codigo+'] '+perfilObj.nombre
-      : (pf.rol ? '['+pf.codigo+'] '+pf.rol : '['+pf.codigo+']');
-    col1 = badgeN + '<span style="font-size:13px;color:var(--text);">'+displayName+'</span>';
+    // Fila guardada: mostrar texto readonly
+    const cod = pf.codigo || '';
+    const perfilObj = perfilesLinea.find(p => (p.codigo||p.id) === cod);
+    const nombre = perfilObj ? perfilObj.nombre : (pf.rol || cod);
+    const display = cod ? '['+cod+'] '+nombre : nombre;
+    col1 = badgeN + '<span style="font-size:13px;color:var(--text);">'+display+'</span>';
   }
 
   return '<tr style="'+rowStyle+'">'
-    +'<td style="min-width:220px;">'+col1+'</td>'
+    +'<td style="min-width:220px;padding:8px 6px;">'+col1+'</td>'
     +'<td><input value="'+pf.cantidad+'" style="width:58px;font-family:monospace;font-size:13px;" '
-    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'cantidad'+s+',this.value)"></td>'
+    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'cantidad'+sq+',this.value)"></td>'
     +'<td><input value="'+(pf.formula_largo||'')+'" placeholder="Ej: W - 42" style="width:150px;font-family:monospace;font-size:13px;" '
-    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'formula_largo'+s+',this.value)"></td>'
+    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'formula_largo'+sq+',this.value)"></td>'
     +'<td><select style="width:70px;font-size:12px;" '
-    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'solo_si_n'+s+',this.value)">'
+    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'solo_si_n'+sq+',this.value)">'
     +'<option value=""'+(!pf.solo_si_n?' selected':'')+'>Siempre</option>'
     +'<option value="2"'+(pf.solo_si_n==='2'?' selected':'')+'>N = 2</option>'
     +'<option value="3"'+(pf.solo_si_n==='3'?' selected':'')+'>N = 3</option>'
     +'<option value="4"'+(pf.solo_si_n==='4'?' selected':'')+'>N = 4</option>'
     +'</select></td>'
     +'<td><button class="btn-danger" '
-    +'onclick="eliminarConfigPerfil('+s+la+s+','+s+ta+s+','+idx+')">x</button></td>'
+    +'onclick="eliminarConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+')">x</button></td>'
     +'</tr>';
 }
 
@@ -2101,12 +2103,10 @@ function seleccionarPerfilConfig(linea_id, tipo_id, idx, val) {
   if (!val) return;
   const cfg = _ensureConfigTipo(linea_id, tipo_id);
   if (!cfg.perfiles[idx]) return;
-  // val format: "codigo|id"
-  const codigo = val.split('|')[0];
-  const perfil = state.perfiles.find(p => p.codigo === codigo && p.linea_id === linea_id)
-    || state.perfiles.find(p => p.codigo === codigo);
-  cfg.perfiles[idx].codigo = codigo;
-  cfg.perfiles[idx].rol = perfil ? perfil.nombre : codigo;
+  const perfil = state.perfiles.find(p => (p.codigo || p.id) === val && p.linea_id === linea_id)
+    || state.perfiles.find(p => (p.codigo || p.id) === val);
+  cfg.perfiles[idx].codigo = val;
+  cfg.perfiles[idx].rol = perfil ? perfil.nombre : val;
   saveConfigTipo(linea_id, tipo_id);
   render();
 }
