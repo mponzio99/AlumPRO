@@ -1965,7 +1965,7 @@ function renderConfig() {
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Rol / descripcion</th><th>Perfil</th><th>Cantidad</th><th>Formula largo (mm)</th><th>Solo si N=</th><th></th></tr></thead>
+        <thead><tr><th>Perfil</th><th>Nombre</th><th>Cantidad</th><th>Formula largo (mm)</th><th>Solo si N=</th><th></th></tr></thead>
         <tbody>${perfilesConfigRows}</tbody>
       </table>
     </div>
@@ -2051,45 +2051,44 @@ function _renderPerfilConfigRow(la, ta, pf, idx) {
   const condColor = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF' : '#A855F7') : 'var(--text3)';
   const condBg    = pf.solo_si_n ? (pf.solo_si_n==='2' ? '#2B8EFF22' : '#A855F722') : 'transparent';
   const badgeN = pf.solo_si_n
-    ? '<span style="font-size:10px;font-weight:700;color:'+condColor+';margin-right:4px;border:1px solid '+condColor+';padding:1px 5px;border-radius:3px;">N='+pf.solo_si_n+'</span>' : '';
+    ? '<span style="font-size:10px;font-weight:700;color:'+condColor+';margin-right:5px;border:1px solid '+condColor+';padding:1px 5px;border-radius:3px;">N='+pf.solo_si_n+'</span>' : '';
   const perfilesLinea = state.perfiles.filter(p => p.linea_id === la);
+  // Find the perfil object for the current codigo — for displaying the name
+  const perfilActual = perfilesLinea.find(p => p.codigo === pf.codigo);
+  const nombreActual = perfilActual ? perfilActual.nombre : (pf.rol || '-');
   const selectOpts = perfilesLinea.map(p =>
     '<option value="'+p.codigo+'"'+(p.codigo===pf.codigo?' selected':'')+'>['+p.codigo+'] '+p.nombre+'</option>'
   ).join('');
-  // Use \x27 escaped single quotes in HTML attribute values
-  const sq = '\x27';
+  const s = String.fromCharCode(39); // single quote
   return '<tr style="'+(pf.solo_si_n?'background:'+condBg+';':'')+'">'
-    +'<td>'+badgeN
-    +'<input value="'+( pf.rol||'')+'" placeholder="Ej: Jamba lateral" style="width:120px;font-size:12px;" '
-    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'rol'+sq+',this.value)"></td>'
-    +'<td><select style="min-width:195px;font-size:12px;" '
-    +'onchange="seleccionarPerfilConfig('+sq+la+sq+','+sq+ta+sq+','+idx+',this.value)">'
+    +'<td>'+badgeN+'<select style="min-width:205px;font-size:12px;" '
+    +'onchange="seleccionarPerfilConfig('+s+la+s+','+s+ta+s+','+idx+',this.value)">'
     +'<option value="">-- Seleccionar --</option>'+selectOpts+'</select></td>'
+    +'<td style="font-size:12px;color:var(--text2);padding:0 8px;">'+nombreActual+'</td>'
     +'<td><input value="'+pf.cantidad+'" style="width:58px;font-family:monospace;font-size:13px;" '
-    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'cantidad'+sq+',this.value)"></td>'
+    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'cantidad'+s+',this.value)"></td>'
     +'<td><input value="'+(pf.formula_largo||'')+'" placeholder="Ej: W - 42" style="width:145px;font-family:monospace;font-size:13px;" '
-    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'formula_largo'+sq+',this.value)"></td>'
+    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'formula_largo'+s+',this.value)"></td>'
     +'<td><select style="width:68px;font-size:12px;" '
-    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'solo_si_n'+sq+',this.value)">'
-    +'<option value=""'+ (!pf.solo_si_n?' selected':'')+'>Siempre</option>'
+    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'solo_si_n'+s+',this.value)">'
+    +'<option value=""'+(!pf.solo_si_n?' selected':'')+'>Siempre</option>'
     +'<option value="2"'+(pf.solo_si_n==='2'?' selected':'')+'>N = 2</option>'
     +'<option value="3"'+(pf.solo_si_n==='3'?' selected':'')+'>N = 3</option>'
     +'<option value="4"'+(pf.solo_si_n==='4'?' selected':'')+'>N = 4</option>'
     +'</select></td>'
     +'<td><button class="btn-danger" '
-    +'onclick="eliminarConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+')">x</button></td>'
+    +'onclick="eliminarConfigPerfil('+s+la+s+','+s+ta+s+','+idx+')">x</button></td>'
     +'</tr>';
 }
 
-// Al seleccionar un perfil del dropdown, actualiza codigo y rol
+// Al seleccionar un perfil, guarda el codigo y actualiza el rol con el nombre
 function seleccionarPerfilConfig(linea_id, tipo_id, idx, codigo) {
   const cfg = _ensureConfigTipo(linea_id, tipo_id);
   if (!cfg.perfiles[idx]) return;
   cfg.perfiles[idx].codigo = codigo;
-  if (!cfg.perfiles[idx].rol) {
-    const perfil = state.perfiles.find(p => p.codigo === codigo && p.linea_id === linea_id);
-    if (perfil) cfg.perfiles[idx].rol = perfil.nombre;
-  }
+  // Siempre actualizar el rol con el nombre del perfil seleccionado
+  const perfil = state.perfiles.find(p => p.codigo === codigo && p.linea_id === linea_id);
+  cfg.perfiles[idx].rol = perfil ? perfil.nombre : codigo;
   saveConfigTipo(linea_id, tipo_id);
   render();
 }
