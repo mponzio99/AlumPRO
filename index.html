@@ -3053,12 +3053,14 @@ function updatePrecioVidrio() {
   const linea_id = document.getElementById('m_linea')?.value;
   const tipoId   = document.getElementById('m_tipo')?.value;
   const tv = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
-  const cfg = getConfigTipo(linea_id, tipoId);
-  if (!cfg) return;
   const input = document.getElementById('m_pvid');
-  if (!input) return;
-  if (tv === 'dvh' && cfg.vidrio?.precio_dvh) input.value = cfg.vidrio.precio_dvh;
-  else if (cfg.vidrio?.precio_vcomon) input.value = cfg.vidrio.precio_vcomon;
+  if (!linea_id || !tipoId || !input) return;
+  const cfg = getConfigTipo(linea_id, tipoId);
+  if (!cfg || !cfg.vidrio) return;
+  const precio = tv === 'dvh'
+    ? (cfg.vidrio.precio_dvh || cfg.vidrio.precio_vcomon || null)
+    : (cfg.vidrio.precio_vcomon || null);
+  if (precio) input.value = precio;
 }
 
 async function crearPresupuesto() {
@@ -3173,8 +3175,10 @@ function previewCalc() {
   const W      = parseInt(document.getElementById('m_ancho')?.value);
   const H      = parseInt(document.getElementById('m_alto')?.value);
   const cant   = parseInt(document.getElementById('m_cant')?.value) || 1;
-  const pVid   = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
   const tv     = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
+  // Precio vidrio: primero actualizar el input desde config, luego leerlo
+  updatePrecioVidrio();
+  const pVid   = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
   const preview = document.getElementById('m_preview');
   const btnAb   = document.getElementById('btnAgregarAb');
   if (!preview) return;
@@ -3216,8 +3220,8 @@ function previewCalc() {
   const vidrios = resBase ? resBase.vidrios : [];
   const costoVidrios = vidrios.reduce((s, v) => s + (v.ancho/1000)*(v.alto/1000)*pVid, 0);
 
-  // Obtener detalle de perfiles para mostrar
-  const cortesRaw = getCortesRaw(linea, tipoId, W, H, params, state.perfiles);
+  // Obtener detalle de perfiles para mostrar (con tipo_vidrio para filtrar correctamente)
+  const cortesRaw = getCortesRaw(linea, tipoId, W, H, paramsConTv, state.perfiles);
   const perfilesFiltrados = state.perfiles.filter(pf => pf.linea_id === linea);
   const perfilesUsados = [...new Set(cortesRaw.filter(c => c.perfil).map(c => c.perfil.codigo || c.perfil.id))];
   const mmTotal = cortesRaw.filter(c => c.perfil).reduce((s, c) => s + c.largo * c.cantidad, 0);
