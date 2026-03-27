@@ -590,8 +590,14 @@ function getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB) {
   const cfg = getConfigTipo(linea_id, tipo_id);
   // Si hay config (custom o editada), siempre usarla
   if (cfg && cfg.perfiles && cfg.perfiles.length > 0) {
+    const tipoVidrio = params?.tipo_vidrio || 'vcomon'; // 'vcomon' o 'dvh'
     return cfg.perfiles
       .filter(pf => !pf.solo_si_n || String(pf.solo_si_n) === String(N))
+      .filter(pf => {
+        // Filtrar por tipo de vidrio: si no tiene condicion, siempre incluir
+        if (!pf.tipo_vidrio || pf.tipo_vidrio === 'siempre') return true;
+        return pf.tipo_vidrio === tipoVidrio;
+      })
       .map(pf => {
         const perfil = perfilesFiltrados.find(p => p.codigo === pf.codigo || p.id === pf.codigo);
         if (!perfil) return null;
@@ -717,12 +723,27 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
 
   const cortesRaw = getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB);
 
-  // Vidrios — formula de config si existe, sino hardcoded (solo built-in), sino vacío
+  // Vidrios — usar fórmulas según tipo_vidrio (vcomon o dvh)
   let vidrios;
-  if (cfg && cfg.vidrio && cfg.vidrio.formula_ancho && cfg.vidrio.formula_alto) {
-    const vAncho = evalFormula(cfg.vidrio.formula_ancho, W, H, N);
-    const vAlto  = evalFormula(cfg.vidrio.formula_alto,  W, H, N);
-    vidrios = Array.from({ length: N }, (_, i) => ({ desc: 'Vidrio hoja ' + (i+1), ancho: vAncho, alto: vAlto }));
+  const tipoVid = params?.tipo_vidrio || 'vcomon';
+  if (cfg && cfg.vidrio) {
+    const v = cfg.vidrio;
+    // Elegir fórmulas según tipo de vidrio
+    const fAncho = tipoVid === 'dvh'
+      ? (v.formula_ancho_dvh || v.formula_ancho_vcomon || v.formula_ancho || '')
+      : (v.formula_ancho_vcomon || v.formula_ancho || '');
+    const fAlto = tipoVid === 'dvh'
+      ? (v.formula_alto_dvh || v.formula_alto_vcomon || v.formula_alto || '')
+      : (v.formula_alto_vcomon || v.formula_alto || '');
+    if (fAncho && fAlto) {
+      const vAncho = evalFormula(fAncho, W, H, N);
+      const vAlto  = evalFormula(fAlto,  W, H, N);
+      vidrios = Array.from({ length: N }, (_, i) => ({ desc: 'Vidrio hoja ' + (i+1) + (tipoVid==='dvh'?' (DVH)':''), ancho: vAncho, alto: vAlto }));
+    } else if (tipo && typeof tipo.vidrios === 'function') {
+      vidrios = tipo.vidrios(W, H, params);
+    } else {
+      vidrios = [];
+    }
   } else if (tipo && typeof tipo.vidrios === 'function') {
     vidrios = tipo.vidrios(W, H, params);
   } else {
@@ -1341,7 +1362,7 @@ function renderDetalle() {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
           <div style="flex:1">
             <div class="ab-nombre">${a.nombre}</div>
-            <div class="ab-meta">${a.ancho}x${a.alto} mm · ${a.cantidad} u. · ${a.linea}</div>
+            <div class="ab-meta">${a.ancho}x${a.alto} mm · ${a.cantidad} u. · ${a.linea}${tryParse(a.params,{}).tipo_vidrio==='dvh' ? ' · <span style="color:var(--accent);font-size:11px;">DVH</span>' : ''}</div>
           </div>
           <div style="text-align:right">
             <div class="ab-costo">${fmt(cTotal)}</div>
@@ -1843,19 +1864,48 @@ function renderConfig() {
     ? cfg.perfiles.map((pf, idx) => _renderPerfilConfigRow(lineaActiva, tipoActivo, pf, idx)).join('')
     : '<tr><td colspan="6" style="color:var(--text3);padding:16px;text-align:center;">Sin perfiles configurados. Usa &quot;+ Agregar perfil&quot; para empezar.</td></tr>';
 
-  const vidrioConfig = cfg ? `
-    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
-      <div class="form-group" style="flex:1;min-width:180px;">
-        <label>Formula ancho vidrio</label>
-        <input value="${cfg.vidrio.formula_ancho}" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_ancho',this.value)">
+  const vidrioConfig = cfg ? (() => {
+    const v = cfg.vidrio || {};
+    return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Vidrio Comun</div>
+        <div class="form-row" style="gap:10px;">
+          <div class="form-group" style="flex:1;min-width:120px;margin-bottom:8px;">
+            <label>Ancho vidrio</label>
+            <input value="${v.formula_ancho_vcomon||v.formula_ancho||''}" placeholder="Ej: (W/N)-73" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_ancho_vcomon',this.value)">
+          </div>
+          <div class="form-group" style="flex:1;min-width:120px;margin-bottom:8px;">
+            <label>Alto vidrio</label>
+            <input value="${v.formula_alto_vcomon||v.formula_alto||''}" placeholder="Ej: H-168" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_alto_vcomon',this.value)">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Precio por m² ($/m²)</label>
+          <input type="number" value="${v.precio_vcomon||8500}" style="font-family:'DM Mono',monospace;width:120px;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','precio_vcomon',this.value)">
+        </div>
       </div>
-      <div class="form-group" style="flex:1;min-width:180px;">
-        <label>Formula alto vidrio</label>
-        <input value="${cfg.vidrio.formula_alto}" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_alto',this.value)">
+      <div style="background:var(--bg);border:1px solid var(--accent)44;border-radius:8px;padding:12px;">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">DVH</div>
+        <div class="form-row" style="gap:10px;">
+          <div class="form-group" style="flex:1;min-width:120px;margin-bottom:8px;">
+            <label>Ancho vidrio</label>
+            <input value="${v.formula_ancho_dvh||''}" placeholder="Ej: (W/N)-80" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_ancho_dvh',this.value)">
+          </div>
+          <div class="form-group" style="flex:1;min-width:120px;margin-bottom:8px;">
+            <label>Alto vidrio</label>
+            <input value="${v.formula_alto_dvh||''}" placeholder="Ej: H-175" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_alto_dvh',this.value)">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Precio por m² ($/m²)</label>
+          <input type="number" value="${v.precio_dvh||12000}" style="font-family:'DM Mono',monospace;width:120px;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','precio_dvh',this.value)">
+        </div>
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-top:8px;">Variables disponibles: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">W</code> ancho vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">H</code> alto vano, <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">N</code> cantidad de hojas</div>
-  ` : '';
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;">Variables: <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">W</code> ancho, <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">H</code> alto, <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">N</code> hojas</div>
+    `;
+  })() : '';
 
   const customTiposBadges = ''; // etiquetas removidas
 
@@ -1965,7 +2015,7 @@ function renderConfig() {
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Perfil</th><th>Cantidad</th><th>Formula largo (mm)</th><th>Solo si N=</th><th></th></tr></thead>
+        <thead><tr><th>Perfil</th><th>Cantidad</th><th>Formula largo (mm)</th><th>Solo si N=</th><th>Tipo vidrio</th><th></th></tr></thead>
         <tbody>${perfilesConfigRows}</tbody>
       </table>
     </div>
@@ -2053,26 +2103,23 @@ function _renderPerfilConfigRow(la, ta, pf, idx) {
   const badgeN = pf.solo_si_n
     ? '<span style="font-size:10px;font-weight:700;color:'+condColor+';margin-right:5px;border:1px solid '+condColor+';padding:1px 5px;border-radius:3px;">N='+pf.solo_si_n+'</span>' : '';
   const rowStyle = pf.solo_si_n ? 'background:'+condBg+';' : '';
-  const sq = String.fromCharCode(39);
+  const s = String.fromCharCode(39);
 
-  // Normalizar: usar codigo||id en todos lados
   const perfilesLinea = state.perfiles.filter(p => p.linea_id === la);
 
   let col1;
   if (!pf.codigo) {
-    // Fila nueva: mostrar dropdown
     const selectOpts = perfilesLinea.map(p => {
       const cod = p.codigo || p.id || '';
-      return '<option value="'+cod+'">'+( cod ? '['+cod+'] ' : '')+p.nombre+'</option>';
+      return '<option value="'+cod+'">'+(cod ? '['+cod+'] ' : '')+p.nombre+'</option>';
     }).join('');
     col1 = badgeN
       + '<select style="min-width:220px;font-size:12px;" '
-      + 'onchange="seleccionarPerfilConfig('+sq+la+sq+','+sq+ta+sq+','+idx+',this.value)">'
+      + 'onchange="seleccionarPerfilConfig('+s+la+s+','+s+ta+s+','+idx+',this.value)">'
       + '<option value="">-- Seleccionar perfil --</option>'
       + selectOpts
       + '</select>';
   } else {
-    // Fila guardada: mostrar texto readonly
     const cod = pf.codigo || '';
     const perfilObj = perfilesLinea.find(p => (p.codigo||p.id) === cod);
     const nombre = perfilObj ? perfilObj.nombre : (pf.rol || cod);
@@ -2080,21 +2127,29 @@ function _renderPerfilConfigRow(la, ta, pf, idx) {
     col1 = badgeN + '<span style="font-size:13px;color:var(--text);">'+display+'</span>';
   }
 
+  const tv = pf.tipo_vidrio || 'siempre';
+
   return '<tr style="'+rowStyle+'">'
     +'<td style="min-width:220px;padding:8px 6px;">'+col1+'</td>'
     +'<td><input value="'+pf.cantidad+'" style="width:58px;font-family:monospace;font-size:13px;" '
-    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'cantidad'+sq+',this.value)"></td>'
+    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'cantidad'+s+',this.value)"></td>'
     +'<td><input value="'+(pf.formula_largo||'')+'" placeholder="Ej: W - 42" style="width:150px;font-family:monospace;font-size:13px;" '
-    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'formula_largo'+sq+',this.value)"></td>'
+    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'formula_largo'+s+',this.value)"></td>'
     +'<td><select style="width:70px;font-size:12px;" '
-    +'onchange="updateConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+','+sq+'solo_si_n'+sq+',this.value)">'
+    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'solo_si_n'+s+',this.value)">'
     +'<option value=""'+(!pf.solo_si_n?' selected':'')+'>Siempre</option>'
     +'<option value="2"'+(pf.solo_si_n==='2'?' selected':'')+'>N = 2</option>'
     +'<option value="3"'+(pf.solo_si_n==='3'?' selected':'')+'>N = 3</option>'
     +'<option value="4"'+(pf.solo_si_n==='4'?' selected':'')+'>N = 4</option>'
     +'</select></td>'
+    +'<td><select style="width:82px;font-size:12px;" '
+    +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'tipo_vidrio'+s+',this.value)">'
+    +'<option value="siempre"'+(tv==='siempre'?' selected':'')+'>Siempre</option>'
+    +'<option value="vcomon"'+(tv==='vcomon'?' selected':'')+'>V. Comun</option>'
+    +'<option value="dvh"'+(tv==='dvh'?' selected':'')+'>DVH</option>'
+    +'</select></td>'
     +'<td><button class="btn-danger" '
-    +'onclick="eliminarConfigPerfil('+sq+la+sq+','+sq+ta+sq+','+idx+')">x</button></td>'
+    +'onclick="eliminarConfigPerfil('+s+la+s+','+s+ta+s+','+idx+')">x</button></td>'
     +'</tr>';
 }
 
@@ -2994,6 +3049,18 @@ function updatePrecioKg() {
   if (input && match) input.value = match.precio_kg;
 }
 
+function updatePrecioVidrio() {
+  const linea_id = document.getElementById('m_linea')?.value;
+  const tipoId   = document.getElementById('m_tipo')?.value;
+  const tv = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
+  const cfg = getConfigTipo(linea_id, tipoId);
+  if (!cfg) return;
+  const input = document.getElementById('m_pvid');
+  if (!input) return;
+  if (tv === 'dvh' && cfg.vidrio?.precio_dvh) input.value = cfg.vidrio.precio_dvh;
+  else if (cfg.vidrio?.precio_vcomon) input.value = cfg.vidrio.precio_vcomon;
+}
+
 async function crearPresupuesto() {
   const btn = document.querySelector('#modalOverlay .btn-primary');
   if (btn?.disabled) return; // evitar doble submit
@@ -3042,6 +3109,17 @@ function showAddAbertura() {
       <div class="form-group"><label>Cantidad</label><input type="number" id="m_cant" value="1" min="1" oninput="previewCalc()"></div>
     </div>
     <div id="m_params"></div>
+    <div class="form-group">
+      <label>Tipo de vidrio</label>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;text-transform:none;font-weight:400;letter-spacing:0;">
+          <input type="radio" name="m_tipo_vidrio" id="m_tv_vcomon" value="vcomon" checked onchange="updatePrecioVidrio();previewCalc()"> Vidrio Comun
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;text-transform:none;font-weight:400;letter-spacing:0;">
+          <input type="radio" name="m_tipo_vidrio" id="m_tv_dvh" value="dvh" onchange="updatePrecioVidrio();previewCalc()"> DVH
+        </label>
+      </div>
+    </div>
     <div class="form-group"><label>Precio vidrio ($/m²)</label><input type="number" id="m_pvid" value="8500" oninput="previewCalc()"></div>
     <div id="m_preview"></div>
     <div class="modal-actions">
@@ -3072,6 +3150,7 @@ function updateParams() {
       <label>${p.nombre}</label>
       <input type="number" id="param_${p.id}" value="${p.default}" min="${p.min}" max="${p.max}" style="width:100px" oninput="previewCalc()">
     </div>`).join('');
+  updatePrecioVidrio();
   previewCalc();
 }
 
@@ -3095,6 +3174,7 @@ function previewCalc() {
   const H      = parseInt(document.getElementById('m_alto')?.value);
   const cant   = parseInt(document.getElementById('m_cant')?.value) || 1;
   const pVid   = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
+  const tv     = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
   const preview = document.getElementById('m_preview');
   const btnAb   = document.getElementById('btnAgregarAb');
   if (!preview) return;
@@ -3113,13 +3193,14 @@ function previewCalc() {
   (tipo.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
 
   // Abertura simulada (id temporal)
+  const paramsPreview = { ...params, tipo_vidrio: tv };
   const abSimulada = {
     id: '__preview__',
     presupuesto_id: state.presupuestoActivo,
     linea_id: linea,
     tipo_id: tipoId,
     ancho: W, alto: H, cantidad: cant,
-    params: JSON.stringify(params),
+    params: JSON.stringify(paramsPreview),
     precio_vidrio: pVid,
     vidrios: '[]',
   };
@@ -3129,8 +3210,9 @@ function previewCalc() {
   const costos = calcularCostoAberturas(todasConNueva, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
   const cNueva = costos['__preview__'] || { perfiles: 0, vidrios: 0, herrajes: 0 };
 
-  // También calcular vidrios de la nueva abertura
-  const resBase = calcularAbertura(linea, tipoId, W, H, params, state.perfiles, state.herrajes, pVid, precioKg, {});
+  // También calcular vidrios de la nueva abertura (con tipo_vidrio en params)
+  const paramsConTv = { ...params, tipo_vidrio: tv };
+  const resBase = calcularAbertura(linea, tipoId, W, H, paramsConTv, state.perfiles, state.herrajes, pVid, precioKg, {});
   const vidrios = resBase ? resBase.vidrios : [];
   const costoVidrios = vidrios.reduce((s, v) => s + (v.ancho/1000)*(v.alto/1000)*pVid, 0);
 
@@ -3202,6 +3284,9 @@ async function confirmarAgregarAbertura() {
     const tipo = tipos.find(t => t.id === tipoId);
     const params = {};
     (tipo?.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
+
+    const tipoVidrio = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
+    params.tipo_vidrio = tipoVidrio;
 
     const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
     const barrasExistentes = getBarrasExistentes(absExistentes, state.perfiles);
@@ -3605,7 +3690,7 @@ function imprimirPresupuesto(id) {
         +'<div style="text-align:right;"><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Especificacion</div>'
         +'<div style="font-size:13px;color:#475569;"><b>Linea:</b> '+(p.linea||'Modena')+'</div>'
         +'<div style="font-size:13px;color:#475569;"><b>Color:</b> '+(p.color_al||'-')+'</div>'
-        +'<div style="font-size:13px;color:#475569;"><b>Tipo:</b> '+(p.tipo_al||'-')+'</div>'
+
         +'</div>'
       +'</div>'
     +'</div>'
@@ -3651,7 +3736,7 @@ async function exportarWord(id) {
       +'<td style="border:1px solid #ccc;padding:8px;vertical-align:middle;">'
         +'<b style="font-size:11pt;">'+a.nombre+'</b><br>'
         +'<span style="font-size:9pt;color:#555;">'+a.ancho+' x '+a.alto+' mm &nbsp;·&nbsp; '+a.cantidad+' u. &nbsp;·&nbsp; '+a.linea+'</span><br>'
-        +'<span style="font-size:9pt;color:#555;">'+(p.color_al||'-')+' / '+(p.tipo_al||'-')+'</span>'
+        +'<span style="font-size:9pt;color:#555;">'+(p.color_al||'-')+'</span>'
       +'</td>'
       +'<td style="border:1px solid #ccc;padding:8px;text-align:right;vertical-align:middle;white-space:nowrap;font-weight:bold;font-size:11pt;">'+fmt(total * Number(a.cantidad))+'</td>'
       +'</tr>';
