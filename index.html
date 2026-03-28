@@ -418,162 +418,7 @@ const PRECIOS_KG_DEFAULT = [
 // ============================================================
 // FÓRMULAS DE CORTE
 // ============================================================
-const TIPOS_ABERTURA = {
-  modena: [
-    {
-      id: 'ventana-corrediza',
-      nombre: 'Ventana Corrediza',
-      params: [{ id: 'hojas', nombre: 'Cantidad de hojas', default: 2, min: 2, max: 8 }],
-      cortes: (W, H, p, perfiles) => {
-        const N = p.hojas || 2;
-        const get = cod => perfiles.find(x => x.codigo === cod || x.id === cod);
-        return [
-          { perfil: get('5201'), cantidad: 2,     largo: H,                          desc: 'Jamba lateral (marco)' },
-          { perfil: get('5200'), cantidad: 2,     largo: W - 42,                     desc: 'Zócalo/Cabezal de marco' },
-          { perfil: get('5203'), cantidad: N,     largo: H - 79,                     desc: 'Parante lateral hoja' },
-          { perfil: get('5207'), cantidad: N,     largo: H - 79,                     desc: 'Parante central hoja' },
-          { perfil: get('5204'), cantidad: N * 2, largo: Math.round(W / N) - 24,     desc: 'Zócalo/Cabezal hoja' },
-          { perfil: get('5206'), cantidad: 2,     largo: W + 58,                     desc: 'Tapajunta horiz.' },
-          { perfil: get('5206'), cantidad: 2,     largo: H + 58,                     desc: 'Tapajunta vert.' },
-        ].filter(c => c.perfil);
-      },
-      vidrios: (W, H, p) => {
-        const N = p.hojas || 2;
-        return Array.from({ length: N }, (_, i) => ({
-          desc: `Vidrio hoja ${i + 1}`,
-          ancho: Math.round(W / N) - 73,
-          alto: H - 168,
-        }));
-      },
-      herrajes: (p) => [
-        { id: 'h1', cantidad: p.hojas || 2, desc: 'Ruedas (par x hoja)' },
-        { id: 'h2', cantidad: 1,            desc: 'Cierre' },
-      ],
-    },
-    {
-      id: 'puerta-abrir',
-      nombre: 'Puerta de Abrir',
-      params: [{ id: 'hojas', nombre: 'Cantidad de hojas', default: 1, min: 1, max: 2 }],
-      cortes: (W, H, p, perfiles) => {
-        const N = p.hojas || 1;
-        const get = cod => perfiles.find(x => x.codigo === cod || x.id === cod);
-        return [
-          { perfil: get('5216'), cantidad: 1,     largo: W,       desc: 'Marco horizontal' },
-          { perfil: get('5216'), cantidad: 2,     largo: H,       desc: 'Marco vertical' },
-          { perfil: get('5218'), cantidad: N,     largo: W - 40,  desc: 'Travesaño puerta horiz.' },
-          { perfil: get('5214'), cantidad: N * 2, largo: H - 27,  desc: 'Parante puerta vert.' },
-          { perfil: get('5209'), cantidad: N,     largo: W - 192, desc: 'Zócalo alto' },
-          { perfil: get('5230'), cantidad: 4,     largo: W - 192, desc: 'Contravidrio horiz.' },
-          { perfil: get('5230'), cantidad: 4,     largo: H - 155, desc: 'Contravidrio vert.' },
-          { perfil: get('5206'), cantidad: 1,     largo: W + 58,  desc: 'Tapajunta horiz.' },
-          { perfil: get('5206'), cantidad: 2,     largo: H + 30,  desc: 'Tapajunta vert.' },
-        ].filter(c => c.perfil);
-      },
-      vidrios: (W, H, p) => {
-        const N = p.hojas || 1;
-        return Array.from({ length: N }, (_, i) => ({
-          desc: `Vidrio hoja ${i + 1}`,
-          ancho: W - 203,
-          alto: H - 160,
-        }));
-      },
-      herrajes: (p) => [
-        { id: 'h2', cantidad: 1, desc: 'Cierre/Manija' },
-      ],
-    },
-    {
-      id: 'puerta-ventana-corrediza',
-      nombre: 'Puerta Ventana Corrediza',
-      params: [{ id: 'hojas', nombre: 'Cantidad de hojas', default: 2, min: 2, max: 3 }],
-      cortes: (W, H, p, perfiles) => {
-        const N = p.hojas || 2;
-        const get = cod => perfiles.find(x => x.codigo === cod || x.id === cod);
-
-        // Largo de hoja según cantidad
-        const largoHojaLateral = N === 3 ? Math.round(W / 3) - 7  : Math.round(W / 2) - 24;
-        const largoHojaCentral = N === 3 ? Math.round(W / 3) + 1  : Math.round(W / 2) - 24;
-
-        // Zócalo/Cabezal de hoja (5204)
-        const cortesZocaloCabezal = N === 3
-          ? [
-              { perfil: get('5204'), cantidad: 4, largo: largoHojaLateral, desc: 'Cabezal/Zocalo hoja lateral' },
-              { perfil: get('5204'), cantidad: 2, largo: largoHojaCentral, desc: 'Cabezal/Zocalo hoja central' },
-            ]
-          : [{ perfil: get('5204'), cantidad: N * 2, largo: largoHojaLateral, desc: 'Cabezal/Zocalo hoja' }];
-
-        // Zócalo Alto (5209)
-        const cortesZocaloAlto = N === 3
-          ? [
-              { perfil: get('5209'), cantidad: 2, largo: largoHojaLateral, desc: 'Zocalo alto hoja lateral' },
-              { perfil: get('5209'), cantidad: 1, largo: largoHojaCentral, desc: 'Zocalo alto hoja central' },
-            ]
-          : [{ perfil: get('5209'), cantidad: N, largo: largoHojaLateral, desc: 'Zocalo alto' }];
-
-        // Parantes según cantidad de hojas:
-        // 2 hojas: 2 parantes laterales (5203) + 2 parantes centrales (5207)
-        // 3 hojas: hojas laterales → 1 parante lateral (5203) + 1 central (5207) c/u = 2×5203 + 2×5207
-        //          hoja central   → 2 parantes centrales (5207) = 2×5207
-        //          Total: 2×5203 + 4×5207
-        const cortesParantes = N === 3
-          ? [
-              { perfil: get('5203'), cantidad: 2, largo: H - 79, desc: 'Parante lateral (hojas laterales)' },
-              { perfil: get('5207'), cantidad: 4, largo: H - 79, desc: 'Parante central (todas las hojas)' },
-            ]
-          : [
-              { perfil: get('5203'), cantidad: 2, largo: H - 79, desc: 'Parante lateral hoja' },
-              { perfil: get('5207'), cantidad: 2, largo: H - 79, desc: 'Parante central hoja' },
-            ];
-
-        return [
-          // Marco: 3 guías para 3 hojas, estándar para 2
-          N === 3
-            ? { perfil: get('5241'), cantidad: 2, largo: H,     desc: 'Jamba 3 guias (marco)' }
-            : { perfil: get('5201'), cantidad: 2, largo: H,     desc: 'Jamba lateral (marco)' },
-          N === 3
-            ? { perfil: get('5240'), cantidad: 2, largo: W - 42, desc: 'Umbral 3 guias (marco)' }
-            : { perfil: get('5200'), cantidad: 2, largo: W - 42, desc: 'Umbral y dintel (marco)' },
-          ...cortesParantes,
-          ...cortesZocaloCabezal,
-          ...cortesZocaloAlto,
-          { perfil: get('5206'), cantidad: 1, largo: W + 58, desc: 'Tapajunta horizontal' },
-          { perfil: get('5206'), cantidad: 2, largo: H + 30, desc: 'Tapajunta vertical' },
-          { perfil: get('5205'), cantidad: 2, largo: H + 5,  desc: 'Premarco vertical' },
-          { perfil: get('5205'), cantidad: 2, largo: W + 5,  desc: 'Premarco horizontal' },
-        ].filter(c => c.perfil);
-      },
-      vidrios: (W, H, p) => {
-        const N = p.hojas || 2;
-        if (N === 2) {
-          return [1, 2].map(i => ({
-            desc: 'Vidrio hoja ' + i,
-            ancho: Math.round(W / 2) - 73,
-            alto: H - 222,
-          }));
-        } else {
-          // 3 hojas: 2 laterales + 1 central con largos distintos
-          return [
-            { desc: 'Vidrio hoja 1 (lateral)', ancho: Math.round(W / 3) - 7  - 66, alto: H - 222 },
-            { desc: 'Vidrio hoja 2 (central)', ancho: Math.round(W / 3) + 1  - 66, alto: H - 222 },
-            { desc: 'Vidrio hoja 3 (lateral)', ancho: Math.round(W / 3) - 7  - 66, alto: H - 222 },
-          ];
-        }
-      },
-      herrajes: (p) => {
-        const N = p.hojas || 2;
-        const perimHoja = 1; // se usa para burlete y felpa (perímetro, simplificado a 1 unidad por hoja)
-        return [
-          { id: 'h4',  cantidad: N,     desc: 'Cierre bi-punto (1 x hoja)' },
-          { id: 'h3',  cantidad: N * 2, desc: 'Burlete perimetral (2m x hoja aprox.)' },
-          { id: 'h5',  cantidad: N * 2, desc: 'Rueda doble (2 x hoja)' },
-          { id: 'h6',  cantidad: N * 3, desc: 'Felpa (3m x hoja)' },
-          { id: 'h7',  cantidad: 1,     desc: 'T-91 (bolsa)' },
-          { id: 'h8',  cantidad: 4,     desc: 'Tapones antidesagote' },
-          { id: 'h9',  cantidad: 1,     desc: 'T-87 (bolsa)' },
-        ];
-      },
-    },
-  ],
-};
+const TIPOS_ABERTURA = { modena: [] };
 
 // ============================================================
 // BIN PACKING + COSTO POR KG
@@ -979,86 +824,7 @@ async function agregarSobrantesAStock(costos, abs) {
 }
 
 
-// Estructura: { linea_id: { tipo_id: { perfiles: [...], vidrio: {...} } } }
-// ============================================================
-const CONFIG_TIPOLOGIAS_DEFAULT = {
-  modena: {
-    'ventana-corrediza': {
-      perfiles: [
-        { rol: 'Jamba lateral (marco)',   codigo: '5201', cantidad: '2',   formula_largo: 'H',          solo_si_n: '' },
-        { rol: 'Zocalo/Cabezal marco',    codigo: '5200', cantidad: '2',   formula_largo: 'W - 42',     solo_si_n: '' },
-        { rol: 'Parante lateral hoja',    codigo: '5203', cantidad: 'N',   formula_largo: 'H - 79',     solo_si_n: '' },
-        { rol: 'Parante central hoja',    codigo: '5207', cantidad: 'N',   formula_largo: 'H - 79',     solo_si_n: '' },
-        { rol: 'Zocalo/Cabezal hoja',     codigo: '5204', cantidad: 'N*2', formula_largo: '(W/N) - 24', solo_si_n: '' },
-        { rol: 'Tapajunta horiz.',        codigo: '5206', cantidad: '2',   formula_largo: 'W + 58',     solo_si_n: '' },
-        { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 58',     solo_si_n: '' },
-      ],
-      vidrio: { formula_ancho: '(W/N) - 73', formula_alto: 'H - 168' },
-      herrajes: [
-        { id: 'h1', descripcion: 'Rueda corrediza (par x hoja)', cantidad: 'N', solo_si_n: '' },
-        { id: 'h2', descripcion: 'Cierre / Falleba',             cantidad: '1', solo_si_n: '' },
-      ],
-    },
-    'puerta-abrir': {
-      perfiles: [
-        { rol: 'Marco horizontal',        codigo: '5216', cantidad: '1',   formula_largo: 'W',          solo_si_n: '' },
-        { rol: 'Marco vertical',          codigo: '5216', cantidad: '2',   formula_largo: 'H',          solo_si_n: '' },
-        { rol: 'Travesano puerta horiz.', codigo: '5218', cantidad: 'N',   formula_largo: 'W - 40',     solo_si_n: '' },
-        { rol: 'Parante puerta vert.',    codigo: '5214', cantidad: 'N*2', formula_largo: 'H - 27',     solo_si_n: '' },
-        { rol: 'Zocalo alto',             codigo: '5209', cantidad: 'N',   formula_largo: 'W - 192',    solo_si_n: '' },
-        { rol: 'Contravidrio horiz.',     codigo: '5230', cantidad: '4',   formula_largo: 'W - 192',    solo_si_n: '' },
-        { rol: 'Contravidrio vert.',      codigo: '5230', cantidad: '4',   formula_largo: 'H - 155',    solo_si_n: '' },
-        { rol: 'Tapajunta horiz.',        codigo: '5206', cantidad: '1',   formula_largo: 'W + 58',     solo_si_n: '' },
-        { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 30',     solo_si_n: '' },
-      ],
-      vidrio: { formula_ancho: 'W - 203', formula_alto: 'H - 160' },
-      herrajes: [
-        { id: 'h2', descripcion: 'Cierre / Manija', cantidad: '1', solo_si_n: '' },
-      ],
-    },
-    'puerta-ventana-corrediza': {
-      perfiles: [
-        // 2 hojas — marco estándar
-        { rol: 'Jamba lateral',           codigo: '5201', cantidad: '2',   formula_largo: 'H',                solo_si_n: '2' },
-        { rol: 'Umbral y dintel',         codigo: '5200', cantidad: '2',   formula_largo: 'W - 42',           solo_si_n: '2' },
-        // 3 hojas — marco 3 guías
-        { rol: 'Jamba 3 guias',           codigo: '5241', cantidad: '2',   formula_largo: 'H',                solo_si_n: '3' },
-        { rol: 'Umbral 3 guias',          codigo: '5240', cantidad: '2',   formula_largo: 'W - 42',           solo_si_n: '3' },
-        // Parantes — 2 hojas
-        { rol: 'Parante lateral hoja',    codigo: '5203', cantidad: '2',   formula_largo: 'H - 79',           solo_si_n: '2' },
-        { rol: 'Parante central hoja',    codigo: '5207', cantidad: '2',   formula_largo: 'H - 79',           solo_si_n: '2' },
-        // Parantes — 3 hojas (2 lat + 4 centrales)
-        { rol: 'Parante lateral hoja',    codigo: '5203', cantidad: '2',   formula_largo: 'H - 79',           solo_si_n: '3' },
-        { rol: 'Parante central hoja',    codigo: '5207', cantidad: '4',   formula_largo: 'H - 79',           solo_si_n: '3' },
-        // Cabezal/Zocalo hoja — 2 hojas
-        { rol: 'Cabezal/Zocalo hoja lat.',codigo: '5204', cantidad: 'N*2', formula_largo: '(W/N) - 24',       solo_si_n: '2' },
-        // Cabezal/Zocalo hoja — 3 hojas (laterales y central tienen largos distintos)
-        { rol: 'Cabezal/Zocalo lat. x2',  codigo: '5204', cantidad: '4',   formula_largo: 'Math.round(W/3)-7',solo_si_n: '3' },
-        { rol: 'Cabezal/Zocalo central',  codigo: '5204', cantidad: '2',   formula_largo: 'Math.round(W/3)+1',solo_si_n: '3' },
-        // Zocalo alto — 2 hojas
-        { rol: 'Zocalo alto',             codigo: '5209', cantidad: 'N',   formula_largo: '(W/N) - 24',       solo_si_n: '2' },
-        // Zocalo alto — 3 hojas
-        { rol: 'Zocalo alto lat. x2',     codigo: '5209', cantidad: '2',   formula_largo: 'Math.round(W/3)-7',solo_si_n: '3' },
-        { rol: 'Zocalo alto central',     codigo: '5209', cantidad: '1',   formula_largo: 'Math.round(W/3)+1',solo_si_n: '3' },
-        // Tapajuntas y premarco — siempre
-        { rol: 'Tapajunta horiz.',        codigo: '5206', cantidad: '1',   formula_largo: 'W + 58',           solo_si_n: '' },
-        { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 30',           solo_si_n: '' },
-        { rol: 'Premarco vertical',       codigo: '5205', cantidad: '2',   formula_largo: 'H + 5',            solo_si_n: '' },
-        { rol: 'Premarco horizontal',     codigo: '5205', cantidad: '2',   formula_largo: 'W + 5',            solo_si_n: '' },
-      ],
-      vidrio: { formula_ancho: '(W/N) - 73', formula_alto: 'H - 222' },
-      herrajes: [
-        { id: 'h4', descripcion: 'Cierre bi-punto (1 x hoja)',       cantidad: 'N',   solo_si_n: '' },
-        { id: 'h3', descripcion: 'Burlete perimetral (2m x hoja)',    cantidad: 'N*2', solo_si_n: '' },
-        { id: 'h5', descripcion: 'Rueda doble (2 x hoja)',            cantidad: 'N*2', solo_si_n: '' },
-        { id: 'h6', descripcion: 'Felpa (3m x hoja)',                 cantidad: 'N*3', solo_si_n: '' },
-        { id: 'h7', descripcion: 'T-91 (bolsa)',                      cantidad: '1',   solo_si_n: '' },
-        { id: 'h8', descripcion: 'Tapones antidesagote',              cantidad: '4',   solo_si_n: '' },
-        { id: 'h9', descripcion: 'T-87 (bolsa)',                      cantidad: '1',   solo_si_n: '' },
-      ],
-    },
-  },
-};
+const CONFIG_TIPOLOGIAS_DEFAULT = {};
 
 // Obtener config activa para una tipología (usa state si fue editada, sino default)
 function getConfigTipo(linea_id, tipo_id) {
@@ -1947,6 +1713,12 @@ function renderConfig() {
   </div>
 
   <div class="config-section">
+    <div class="config-title">Migracion de tipologias</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:12px;">Convierte las tipologias hardcodeadas en configurables desde la app. Esta accion se realiza una sola vez.</div>
+    <button class="btn-secondary" onclick="migrarTipologiasBuiltin()" id="btnMigrar">Migrar tipologias al Sheet</button>
+  </div>
+
+  <div class="config-section">
     <div class="config-title">Parametros de calculo</div>
     <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
       <div class="form-group" style="margin:0;flex:0 0 auto;">
@@ -2169,6 +1941,127 @@ function seleccionarPerfilConfig(linea_id, tipo_id, idx, val) {
 // ============================================================
 // TIPOLOGÍAS CUSTOM
 // ============================================================
+// ============================================================
+// MIGRACION TIPOLOGIAS BUILT-IN -> CUSTOM
+// ============================================================
+async function migrarTipologiasBuiltin() {
+  const btn = document.getElementById('btnMigrar');
+  if (btn) { btn.textContent = 'Migrando...'; btn.disabled = true; }
+
+  const BUILTIN_META = [
+    { id: 'ventana-corrediza',        nombre: 'Ventana Corrediza',        linea_id: 'modena', con_hojas: true, hojas_min: 2, hojas_max: 8, hojas_default: 2 },
+    { id: 'puerta-abrir',             nombre: 'Puerta de Abrir',          linea_id: 'modena', con_hojas: true, hojas_min: 1, hojas_max: 2, hojas_default: 1 },
+    { id: 'puerta-ventana-corrediza', nombre: 'Puerta Ventana Corrediza', linea_id: 'modena', con_hojas: true, hojas_min: 2, hojas_max: 3, hojas_default: 2 },
+  ];
+
+  // Config por defecto para cada tipo (copiada de lo que estaba hardcodeado)
+  const BUILTIN_CFG = {
+    'ventana-corrediza': {
+      perfiles: [
+        { rol: 'Jamba lateral (marco)',   codigo: '5201', cantidad: '2',   formula_largo: 'H',          solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Zocalo/Cabezal marco',    codigo: '5200', cantidad: '2',   formula_largo: 'W - 42',     solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Parante lateral hoja',    codigo: '5203', cantidad: 'N',   formula_largo: 'H - 79',     solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Parante central hoja',    codigo: '5207', cantidad: 'N',   formula_largo: 'H - 79',     solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Zocalo/Cabezal hoja',     codigo: '5204', cantidad: 'N*2', formula_largo: '(W/N) - 24', solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Tapajunta horiz.',        codigo: '5206', cantidad: '2',   formula_largo: 'W + 58',     solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 58',     solo_si_n: '', tipo_vidrio: 'siempre' },
+      ],
+      vidrio: { formula_ancho_vcomon: '(W/N) - 73', formula_alto_vcomon: 'H - 168', formula_ancho_dvh: '', formula_alto_dvh: '', precio_vcomon: 8500, precio_dvh: 15000 },
+      herrajes: [
+        { id: 'h1', descripcion: 'Rueda corrediza (par x hoja)', cantidad: 'N', solo_si_n: '' },
+        { id: 'h2', descripcion: 'Cierre / Falleba',             cantidad: '1', solo_si_n: '' },
+      ],
+    },
+    'puerta-abrir': {
+      perfiles: [
+        { rol: 'Marco horizontal',        codigo: '5216', cantidad: '1',   formula_largo: 'W',      solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Marco vertical',          codigo: '5216', cantidad: '2',   formula_largo: 'H',      solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Travesano puerta horiz.', codigo: '5218', cantidad: 'N',   formula_largo: 'W - 40', solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Parante puerta vert.',    codigo: '5214', cantidad: 'N*2', formula_largo: 'H - 27', solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Zocalo alto',             codigo: '5209', cantidad: 'N',   formula_largo: 'W - 192',solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Contravidrio horiz.',     codigo: '5230', cantidad: '4',   formula_largo: 'W - 192',solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Contravidrio vert.',      codigo: '5230', cantidad: '4',   formula_largo: 'H - 155',solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Tapajunta horiz.',        codigo: '5206', cantidad: '1',   formula_largo: 'W + 58', solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 30', solo_si_n: '', tipo_vidrio: 'siempre' },
+      ],
+      vidrio: { formula_ancho_vcomon: 'W - 203', formula_alto_vcomon: 'H - 160', formula_ancho_dvh: '', formula_alto_dvh: '', precio_vcomon: 8500, precio_dvh: 15000 },
+      herrajes: [
+        { id: 'h2', descripcion: 'Cierre / Manija', cantidad: '1', solo_si_n: '' },
+      ],
+    },
+    'puerta-ventana-corrediza': {
+      perfiles: [
+        { rol: 'Jamba lateral',           codigo: '5201', cantidad: '2',   formula_largo: 'H',                 solo_si_n: '2', tipo_vidrio: 'siempre' },
+        { rol: 'Umbral y dintel',         codigo: '5200', cantidad: '2',   formula_largo: 'W - 42',            solo_si_n: '2', tipo_vidrio: 'siempre' },
+        { rol: 'Jamba 3 guias',           codigo: '5241', cantidad: '2',   formula_largo: 'H',                 solo_si_n: '3', tipo_vidrio: 'siempre' },
+        { rol: 'Umbral 3 guias',          codigo: '5240', cantidad: '2',   formula_largo: 'W - 42',            solo_si_n: '3', tipo_vidrio: 'siempre' },
+        { rol: 'Parante lateral hoja',    codigo: '5203', cantidad: '2',   formula_largo: 'H - 79',            solo_si_n: '2', tipo_vidrio: 'siempre' },
+        { rol: 'Parante central hoja',    codigo: '5207', cantidad: '2',   formula_largo: 'H - 79',            solo_si_n: '2', tipo_vidrio: 'siempre' },
+        { rol: 'Parante lateral hoja',    codigo: '5203', cantidad: '2',   formula_largo: 'H - 79',            solo_si_n: '3', tipo_vidrio: 'siempre' },
+        { rol: 'Parante central hoja',    codigo: '5207', cantidad: '4',   formula_largo: 'H - 79',            solo_si_n: '3', tipo_vidrio: 'siempre' },
+        { rol: 'Cabezal/Zocalo hoja lat.',codigo: '5204', cantidad: 'N*2', formula_largo: '(W/N) - 24',        solo_si_n: '2', tipo_vidrio: 'siempre' },
+        { rol: 'Cabezal/Zocalo lat. x2',  codigo: '5204', cantidad: '4',   formula_largo: 'Math.round(W/3)-7', solo_si_n: '3', tipo_vidrio: 'siempre' },
+        { rol: 'Cabezal/Zocalo central',  codigo: '5204', cantidad: '2',   formula_largo: 'Math.round(W/3)+1', solo_si_n: '3', tipo_vidrio: 'siempre' },
+        { rol: 'Zocalo alto',             codigo: '5209', cantidad: 'N',   formula_largo: '(W/N) - 24',        solo_si_n: '2', tipo_vidrio: 'siempre' },
+        { rol: 'Zocalo alto lat. x2',     codigo: '5209', cantidad: '2',   formula_largo: 'Math.round(W/3)-7', solo_si_n: '3', tipo_vidrio: 'siempre' },
+        { rol: 'Zocalo alto central',     codigo: '5209', cantidad: '1',   formula_largo: 'Math.round(W/3)+1', solo_si_n: '3', tipo_vidrio: 'siempre' },
+        { rol: 'Tapajunta horiz.',        codigo: '5206', cantidad: '1',   formula_largo: 'W + 58',            solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Tapajunta vert.',         codigo: '5206', cantidad: '2',   formula_largo: 'H + 30',            solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Premarco vertical',       codigo: '5205', cantidad: '2',   formula_largo: 'H + 5',             solo_si_n: '', tipo_vidrio: 'siempre' },
+        { rol: 'Premarco horizontal',     codigo: '5205', cantidad: '2',   formula_largo: 'W + 5',             solo_si_n: '', tipo_vidrio: 'siempre' },
+      ],
+      vidrio: { formula_ancho_vcomon: '(W/N) - 73', formula_alto_vcomon: 'H - 222', formula_ancho_dvh: '', formula_alto_dvh: '', precio_vcomon: 8500, precio_dvh: 15000 },
+      herrajes: [
+        { id: 'h4', descripcion: 'Cierre bi-punto (1 x hoja)',    cantidad: 'N',   solo_si_n: '' },
+        { id: 'h3', descripcion: 'Burlete perimetral (2m x hoja)',cantidad: 'N*2', solo_si_n: '' },
+        { id: 'h5', descripcion: 'Rueda doble (2 x hoja)',        cantidad: 'N*2', solo_si_n: '' },
+        { id: 'h6', descripcion: 'Felpa (3m x hoja)',             cantidad: 'N*3', solo_si_n: '' },
+        { id: 'h7', descripcion: 'T-91 (bolsa)',                  cantidad: '1',   solo_si_n: '' },
+        { id: 'h8', descripcion: 'Tapones antidesagote',          cantidad: '4',   solo_si_n: '' },
+        { id: 'h9', descripcion: 'T-87 (bolsa)',                  cantidad: '1',   solo_si_n: '' },
+      ],
+    },
+  };
+
+  try {
+    const configRows = await sheetsGet(SHEETS.config);
+
+    for (const meta of BUILTIN_META) {
+      const metaKey = 'tipologia_custom_meta__' + meta.id;
+      const cfgKey  = 'tipologia_' + meta.linea_id + '__' + meta.id;
+      const existeMeta = configRows.find(r => r.key === metaKey);
+      const existeCfg  = configRows.find(r => r.key === cfgKey);
+
+      if (!existeMeta) {
+        await sheetsAppend(SHEETS.config, { id: genId(), key: metaKey, value: JSON.stringify(meta) });
+      }
+      if (!existeCfg) {
+        await sheetsAppend(SHEETS.config, { id: genId(), key: cfgKey, value: JSON.stringify(BUILTIN_CFG[meta.id]) });
+      } else {
+        // Si ya existe config pero sin tipo_vidrio en perfiles, actualizar
+        const cfgActual = JSON.parse(existeCfg.value || '{}');
+        const necesitaUpdate = cfgActual.perfiles && cfgActual.perfiles.some(p => !p.tipo_vidrio);
+        if (necesitaUpdate) {
+          const cfgNew = BUILTIN_CFG[meta.id];
+          await sheetsUpdateRow(SHEETS.config, existeCfg.id, { key: cfgKey, value: JSON.stringify(cfgNew) });
+        }
+      }
+
+      if (!state.tipologias_custom.find(t => t.id === meta.id)) state.tipologias_custom.push(meta);
+      if (!state.config_tipologias[meta.linea_id]) state.config_tipologias[meta.linea_id] = {};
+      state.config_tipologias[meta.linea_id][meta.id] = JSON.parse(JSON.stringify(BUILTIN_CFG[meta.id]));
+    }
+
+    toast('Tipologias migradas. Recarga la pagina para confirmar.');
+    if (btn) btn.textContent = 'Migracion completada';
+    render();
+  } catch(e) {
+    console.error(e);
+    toast('Error en migracion: ' + e.message, 'error');
+    if (btn) { btn.textContent = 'Migrar tipologias al Sheet'; btn.disabled = false; }
+  }
+}
+
 function showModalNuevaTipologia(linea_id) {
   const linea = state.lineas.find(l => l.id === linea_id);
   const tituloLinea = linea ? linea.nombre : linea_id;
@@ -3176,9 +3069,13 @@ function previewCalc() {
   const H      = parseInt(document.getElementById('m_alto')?.value);
   const cant   = parseInt(document.getElementById('m_cant')?.value) || 1;
   const tv     = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
-  // Precio vidrio: primero actualizar el input desde config, luego leerlo
-  updatePrecioVidrio();
-  const pVid   = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
+  // Calcular precio vidrio directamente desde config segun tipo seleccionado
+  const _cfgPv = getConfigTipo(document.getElementById('m_linea')?.value, document.getElementById('m_tipo')?.value);
+  const _pVidConfig = _cfgPv?.vidrio
+    ? (tv === 'dvh' ? (_cfgPv.vidrio.precio_dvh || _cfgPv.vidrio.precio_vcomon) : _cfgPv.vidrio.precio_vcomon)
+    : null;
+  const pVid = _pVidConfig ? Number(_pVidConfig) : (parseFloat(document.getElementById('m_pvid')?.value) || 8500);
+  if (_pVidConfig && document.getElementById('m_pvid')) document.getElementById('m_pvid').value = pVid;
   const preview = document.getElementById('m_preview');
   const btnAb   = document.getElementById('btnAgregarAb');
   if (!preview) return;
