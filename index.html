@@ -327,7 +327,13 @@ async function sheetsDeleteRow(sheetName, id) {
 // ============================================================
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function fmt(n) { return '$' + Math.round(Number(n) || 0).toLocaleString('es-AR'); }
-function today() { return new Date().toLocaleDateString('es-AR'); }
+function today() {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  return dd + '/' + mm + '/' + yyyy;
+}
 
 function toast(msg, type = 'success') {
   const t = document.getElementById('toast');
@@ -634,12 +640,16 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
     const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
     // Usar perfiles_snap si existe y es array válido (precio congelado), sino perfilesDB actual
+    const precioKgEfectivo = Number(a.precio_kg) || precioKg;
+    // getCortesRaw usa perfilesDB completo (para lookup por codigo)
+    // El snap solo se usa en bin packing para obtener peso_tira del precio congelado
+    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
+    // Para bin packing: preferir snap (precio congelado), fallback a perfilesDB filtrado
     const snapPerfiles = Array.isArray(a.perfiles_snap) ? a.perfiles_snap
       : (Array.isArray(tryParse(a.perfiles_snap, null)) ? tryParse(a.perfiles_snap, null) : null);
-    const perfilesEfectivos = (snapPerfiles && snapPerfiles.length > 0) ? snapPerfiles : perfilesDB.filter(pf => pf.linea_id === a.linea_id);
-    const precioKgEfectivo = Number(a.precio_kg) || precioKg;
-    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesEfectivos.length ? perfilesEfectivos : perfilesDB);
-    const perfilesFiltrados = perfilesEfectivos.length ? perfilesEfectivos : perfilesDB.filter(pf => pf.linea_id === a.linea_id);
+    const perfilesFiltrados = (snapPerfiles && snapPerfiles.length > 0)
+      ? snapPerfiles
+      : perfilesDB.filter(pf => pf.linea_id === a.linea_id);
     const agrupados = {};
     for (const c of cortesRaw) {
       if (!c.perfil) continue;
@@ -687,9 +697,8 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   for (const a of abs) {
     const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
-    const snapP2 = Array.isArray(a.perfiles_snap) ? a.perfiles_snap : (Array.isArray(tryParse(a.perfiles_snap, null)) ? tryParse(a.perfiles_snap, null) : null);
-    const perfilesP2 = (snapP2 && snapP2.length > 0) ? snapP2 : perfilesDB;
-    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesP2);
+    // Siempre usar perfilesDB para getCortesRaw (el snap solo sirve para peso_tira en bin packing)
+    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
     mmPorAb[a.id] = {};
     for (const c of cortesRaw) {
       if (!c.perfil) continue;
@@ -1714,6 +1723,7 @@ function renderConfig() {
       <td><input value="${h.cantidad}" style="width:80px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigHerraje('${lineaActiva}','${tipoActivo}',${idx},'cantidad',this.value)"></td>
       <td><select style="width:70px;font-size:12px;" onchange="updateConfigHerraje('${lineaActiva}','${tipoActivo}',${idx},'solo_si_n',this.value)">
         <option value="" ${!h.solo_si_n?'selected':''}>Siempre</option>
+        <option value="1" ${h.solo_si_n==='1'?'selected':''}>N = 1</option>
         <option value="2" ${h.solo_si_n==='2'?'selected':''}>N = 2</option>
         <option value="3" ${h.solo_si_n==='3'?'selected':''}>N = 3</option>
         <option value="4" ${h.solo_si_n==='4'?'selected':''}>N = 4</option>
@@ -1925,6 +1935,7 @@ function _renderPerfilConfigRow(la, ta, pf, idx) {
     +'<td><select style="width:70px;font-size:12px;" '
     +'onchange="updateConfigPerfil('+s+la+s+','+s+ta+s+','+idx+','+s+'solo_si_n'+s+',this.value)">'
     +'<option value=""'+(!pf.solo_si_n?' selected':'')+'>Siempre</option>'
+    +'<option value="1"'+(pf.solo_si_n==='1'?' selected':'')+'>N = 1</option>'
     +'<option value="2"'+(pf.solo_si_n==='2'?' selected':'')+'>N = 2</option>'
     +'<option value="3"'+(pf.solo_si_n==='3'?' selected':'')+'>N = 3</option>'
     +'<option value="4"'+(pf.solo_si_n==='4'?' selected':'')+'>N = 4</option>'
@@ -3579,7 +3590,7 @@ function imprimirPresupuesto(id) {
           </div>
           <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
             <span style="background:#e0f2fe;color:#0369a1;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;">${p.color_al || ''}</span>
-            <span style="background:#f0fdf4;color:#15803d;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;">${p.tipo_al || ''}</span>
+
           </div>
         </div>
         <div style="text-align:right;min-width:80px;">
@@ -3596,7 +3607,7 @@ function imprimirPresupuesto(id) {
       +'<div><div style="font-size:28px;font-weight:800;letter-spacing:-1px;">Alum<span style="color:#00b37e;">Pro</span></div>'
       +'<div style="font-size:12px;color:#64748b;">Gestion de Aberturas de Aluminio</div></div>'
       +'<div style="text-align:right;"><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;">Presupuesto</div>'
-      +'<div style="font-size:12px;color:#475569;">'+p.fecha+'</div></div>'
+      +'<div style="font-size:12px;color:#475569;">'+(function(f){ if(!f) return '-'; const p=f.split('/'); return p.length===3?(p[2].length===4?f:p[1]+'/'+p[0]+'/'+p[2]):f; })(p.fecha)+'</div></div>'
     +'</div>'
     +'<div style="background:#f8fafc;border-radius:12px;padding:20px 24px;margin-bottom:28px;border:1px solid #e2e8f0;">'
       +'<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;">'
@@ -3684,11 +3695,11 @@ async function exportarWord(id) {
       +'<div class="datos-col">'
         +'<div class="label">Cliente</div><div class="valor">'+p.cliente+'</div>'
         +'<div class="label">Obra</div><div class="valor">'+p.obra+'</div>'
-        +'<div class="label">Fecha</div><div class="valor">'+p.fecha+'</div>'
+        +'<div class="label">Fecha</div><div class="valor">'+(function(f){ if(!f) return '-'; const p=f.split('/'); return p.length===3?(p[2].length===4?f:p[1]+'/'+p[0]+'/'+p[2]):f; })(p.fecha)+'</div>'
       +'</div>'
       +'<div class="datos-col">'
         +'<div class="label">Linea de aluminio</div><div class="valor">'+(p.linea||'Modena')+'</div>'
-        +'<div class="label">Color / Tipo</div><div class="valor">'+(p.color_al||'-')+' / '+(p.tipo_al||'-')+'</div>'
+        +'<div class="label">Color</div><div class="valor">'+(p.color_al||'-')+'</div>'
         +'<div class="label">Precio kg</div><div class="valor">'+fmt(p.precio_kg||0)+'/kg</div>'
       +'</div>'
     +'</div>'
