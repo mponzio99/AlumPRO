@@ -965,13 +965,15 @@ async function loadAll() {
       if (row.key && row.key.startsWith('tipologia_custom_meta__')) {
         // Metadatos de tipología custom: { id, linea_id, nombre, con_hojas, hojas_min, hojas_max, hojas_default }
         try { state.tipologias_custom.push(JSON.parse(row.value)); } catch {}
-      } else if (row.key && row.key.startsWith('tipologia_')) {
+      } else if (row.key && row.key.startsWith('tipologia_') && !row.key.startsWith('tipologia_custom_meta__')) {
         try {
           const parsed = JSON.parse(row.value);
-          // key formato: tipologia_linea_id__tipo_id
-          const parts = row.key.replace('tipologia_', '').split('__');
-          const [linea_id, tipo_id] = parts;
-          if (linea_id && tipo_id) {
+          // key formato: tipologia_<linea_id>__<tipo_id>
+          const withoutPrefix = row.key.slice('tipologia_'.length); // "modena__ventana-corrediza"
+          const dunderIdx = withoutPrefix.indexOf('__');
+          if (dunderIdx > 0) {
+            const linea_id = withoutPrefix.slice(0, dunderIdx);
+            const tipo_id  = withoutPrefix.slice(dunderIdx + 2);
             if (!state.config_tipologias[linea_id]) state.config_tipologias[linea_id] = {};
             state.config_tipologias[linea_id][tipo_id] = parsed;
           }
