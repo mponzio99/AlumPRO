@@ -641,7 +641,9 @@ function calcularModulo(a, perfilesDB, herrajesDB) {
   const cant = Number(a.cantidad) || 1;
   const allCortes = [];
   for (const sec of secciones) {
-    const params = { ...(tryParse(a.params, {})), tipo_vidrio: sec.tipo_vidrio || 'vcomon' };
+    const tipoMetaM = state.tipologias_custom.find(t => t.id === sec.tipologia_id);
+    const hojasM = Number(sec.hojas) || Number(tipoMetaM?.hojas_default) || 1;
+    const params = { ...(tryParse(a.params, {})), tipo_vidrio: sec.tipo_vidrio || 'vcomon', hojas: hojasM };
     const cortes = getCortesRaw(a.linea_id, sec.tipologia_id, Number(sec.ancho), alto, params, perfilesDB);
     for (const c of cortes) {
       if (!c.perfil) continue;
@@ -661,12 +663,9 @@ function calcularVidriosModulo(a) {
   const vidrios = [];
   for (const sec of secciones) {
     const tv = sec.tipo_vidrio || 'vcomon';
-    const cfg2 = getConfigTipo(a.linea_id, sec.tipologia_id);
-    const tipos2 = getTiposLinea(a.linea_id);
-    const tipoMeta2 = tipos2.find(t => t.id === sec.tipologia_id);
-    const hojasDefault = tipoMeta2?.params?.[0]?.default || 1;
-    const params = { ...(tryParse(a.params, {})), tipo_vidrio: tv, hojas: sec.hojas || hojasDefault };
-    const N = Number(params.hojas) || 1;
+    // Get hojas: from section, or from tipologia meta default, or 1
+    const tipoMeta = state.tipologias_custom.find(t => t.id === sec.tipologia_id);
+    const N = Number(sec.hojas) || Number(tipoMeta?.hojas_default) || 1;
     const cfg = getConfigTipo(a.linea_id, sec.tipologia_id);
     if (!cfg || !cfg.vidrio) {
       // No vidrio config — skip but don't fail silently
@@ -1097,7 +1096,7 @@ async function loadAll() {
       params: tryParse(a.params, {}),
       optimizacion: tryParse(a.optimizacion, []),
       vidrios: tryParse(a.vidrios, []),
-      es_modulo: a.es_modulo === true || a.es_modulo === 'true' || a.es_modulo === '1',
+      es_modulo: a.es_modulo === true || a.es_modulo === 'true' || a.es_modulo === '1' || a.es_modulo === 1,
       secciones: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : []; })(a.secciones),
       perfiles_snap: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : null; })(a.perfiles_snap),
       herrajes_snap: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : null; })(a.herrajes_snap)
@@ -3311,19 +3310,19 @@ function _renderModalModulo() {
     + '<div id="mod_ancho_total" style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Secciones · Ancho total: ' + anchoTotal + 'mm</div>'
     + '<div id="mod_secciones">' + seccionesHtml + '</div>'
     + (svgPreview ? '<div id="mod_svg_wrap" style="margin:12px 0;text-align:center;">' + svgPreview + '</div>' : '<div id="mod_svg_wrap"></div>')
-    + '<div style="border:1px dashed var(--border);border-radius:8px;padding:12px;margin-top:8px;">'
+    + '<div style="border:1px dashed var(--border);border-radius:8px;padding:12px;margin-top:8px;" id="mod_add_panel">'
     + '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Agregar seccion</div>'
-    + '<div class="form-row" style="gap:8px;">'
     + _buildTipologiaSelect(window._moduloSecTipo || '')
+    + '<div class="form-row" style="gap:8px;margin-top:8px;">'
     + '<div class="form-group" style="flex:1;min-width:90px;"><label>Ancho (mm)</label>'
-    + '<input type="number" id="mod_sec_ancho" value="' + (window._moduloSecAncho||'') + '" placeholder="800" style="font-family:monospace;" oninput="_guardarSeleccionSeccion()"></div>'
+    + '<input type="number" id="mod_sec_ancho" value="' + (window._moduloSecAncho||'') + '" placeholder="800" style="font-family:monospace;"></div>'
     + '<div class="form-group" style="flex:1;min-width:90px;"><label>Tipo vidrio</label>'
-    + '<select id="mod_sec_tv" onchange="_guardarSeleccionSeccion()">'
-    + '<option value="vcomon"' + (window._moduloSecTv==='vcomon'||!window._moduloSecTv?' selected':'') + '>V. Comun</option>'
+    + '<select id="mod_sec_tv">'
+    + '<option value="vcomon"' + (!window._moduloSecTv||window._moduloSecTv==='vcomon'?' selected':'') + '>V. Comun</option>'
     + '<option value="dvh"' + (window._moduloSecTv==='dvh'?' selected':'') + '>DVH</option>'
     + '</select></div>'
     + '</div>'
-    + '<button class="btn-secondary" style="width:100%;margin-top:4px;" onclick="_agregarSeccion()">+ Agregar seccion</button>'
+    + '<button class="btn-secondary" style="width:100%;margin-top:8px;" onclick="_agregarSeccion()">+ Agregar seccion</button>'
     + '</div>'
     + '<div class="modal-actions" style="margin-top:12px;">'
     + '<button class="btn-secondary" onclick="closeModal()">Cancelar</button>'
@@ -3356,11 +3355,14 @@ function _agregarSeccion() {
   const tipo = tipos.find(t => t.id === tipoId);
   if (!window._moduloSecciones) window._moduloSecciones = [];
   window._moduloSecciones.push({ tipologia_id: tipoId, nombre: tipo?.nombre || tipoId, ancho, tipo_vidrio: tv });
-  // Save current form state before re-render
-  window._moduloSecTipo = tipoId;
+  // Save state
+  window._moduloSecTipo = tipoId;  // keep same tipologia selected for next add
+  window._moduloSecTv = tv;
   window._moduloAlto = Number(document.getElementById('mod_alto')?.value) || 1000;
   window._moduloCant = Number(document.getElementById('mod_cant')?.value) || 1;
-  // Update only the secciones list and SVG — don't rebuild whole modal
+  // Clear ancho for next section, keep tipo and tv
+  window._moduloSecAncho = '';
+  // Update only secciones list and SVG
   _actualizarSeccionesUI();
 }
 
@@ -3401,7 +3403,6 @@ function _actualizarSeccionesUI() {
   // Clear ancho input for next section
   const anchoInput = document.getElementById('mod_sec_ancho');
   if (anchoInput) anchoInput.value = '';
-  window._moduloSecAncho = '';
 }
 
 function _eliminarSeccion(i) {
