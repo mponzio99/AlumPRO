@@ -628,6 +628,55 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
 // CÁLCULO DE PRECIO POR ABERTURA
 // criterio: 'proporcional' | 'barra_completa'
 // ============================================================
+// ============================================================
+// CALCULO DE MODULO COMPUESTO
+// ============================================================
+function calcularModulo(a, perfilesDB, herrajesDB) {
+  // Expande un modulo compuesto en cortes individuales por seccion
+  const secciones = Array.isArray(a.secciones) ? a.secciones
+    : (Array.isArray(tryParse(a.secciones, null)) ? tryParse(a.secciones, null) : []);
+  if (!secciones.length) return [];
+  const alto = Number(a.alto);
+  const cant = Number(a.cantidad) || 1;
+  const allCortes = [];
+  for (const sec of secciones) {
+    const params = { ...(tryParse(a.params, {})), tipo_vidrio: sec.tipo_vidrio || 'vcomon' };
+    const cortes = getCortesRaw(a.linea_id, sec.tipologia_id, Number(sec.ancho), alto, params, perfilesDB);
+    for (const c of cortes) {
+      if (!c.perfil) continue;
+      allCortes.push({ ...c, cantidad: c.cantidad * cant, desc: '[' + sec.nombre + '] ' + (c.desc || '') });
+    }
+  }
+  return allCortes;
+}
+
+function calcularVidriosModulo(a) {
+  const secciones = Array.isArray(a.secciones) ? a.secciones
+    : (Array.isArray(tryParse(a.secciones, null)) ? tryParse(a.secciones, null) : []);
+  if (!secciones.length) return [];
+  const alto = Number(a.alto);
+  const cant = Number(a.cantidad) || 1;
+  const vidrios = [];
+  for (const sec of secciones) {
+    const tv = sec.tipo_vidrio || 'vcomon';
+    const params = { ...(tryParse(a.params, {})), tipo_vidrio: tv };
+    const N = Number(params.hojas) || 1;
+    const cfg = getConfigTipo(a.linea_id, sec.tipologia_id);
+    if (!cfg || !cfg.vidrio) continue;
+    const v = cfg.vidrio;
+    const fA = tv === 'dvh' ? (v.formula_ancho_dvh || v.formula_ancho_vcomon || '') : (v.formula_ancho_vcomon || '');
+    const fH = tv === 'dvh' ? (v.formula_alto_dvh  || v.formula_alto_vcomon  || '') : (v.formula_alto_vcomon  || '');
+    if (!fA || !fH) continue;
+    const vA = evalFormula(fA, Number(sec.ancho), alto, N);
+    const vH = evalFormula(fH, Number(sec.ancho), alto, N);
+    const precioVid = tv === 'dvh' ? (Number(v.precio_dvh) || 15000) : (Number(v.precio_vcomon) || 8500);
+    for (let i = 0; i < N; i++) {
+      vidrios.push({ ancho: vA, alto: vH, desc: sec.nombre + ' hoja ' + (i+1) + (tv==='dvh'?' (DVH)':''), precioVid, cant });
+    }
+  }
+  return vidrios;
+}
+
 function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio, umbralSobrante) {
   criterio = criterio || 'proporcional';
   umbralSobrante = umbralSobrante !== undefined ? Number(umbralSobrante) : 20;
@@ -639,11 +688,11 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   for (const a of abs) {
     const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
-    // Usar perfiles_snap si existe y es array válido (precio congelado), sino perfilesDB actual
     const precioKgEfectivo = Number(a.precio_kg) || precioKg;
-    // getCortesRaw usa perfilesDB completo (para lookup por codigo)
-    // El snap solo se usa en bin packing para obtener peso_tira del precio congelado
-    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
+    // Modulo compuesto: expandir secciones
+    const cortesRaw = a.es_modulo
+      ? calcularModulo(a, perfilesDB, herrajesDB)
+      : getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
     // Para bin packing: preferir snap (precio congelado), fallback a perfilesDB filtrado
     const snapPerfiles = Array.isArray(a.perfiles_snap) ? a.perfiles_snap
       : (Array.isArray(tryParse(a.perfiles_snap, null)) ? tryParse(a.perfiles_snap, null) : null);
@@ -697,8 +746,9 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   for (const a of abs) {
     const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
-    // Siempre usar perfilesDB para getCortesRaw (el snap solo sirve para peso_tira en bin packing)
-    const cortesRaw = getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
+    const cortesRaw = a.es_modulo
+      ? calcularModulo(a, perfilesDB, herrajesDB)
+      : getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
     mmPorAb[a.id] = {};
     for (const c of cortesRaw) {
       if (!c.perfil) continue;
@@ -804,25 +854,30 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   for (const a of abs) {
     const cant = Number(a.cantidad) || 1;
     let vidriosArr = tryParse(a.vidrios, []) || [];
-    // Si no hay vidrios guardados, recalcular desde config
-    if (!vidriosArr.length) {
-      const params_a = tryParse(a.params, {});
-      const cfg_a = getConfigTipo(a.linea_id, a.tipo_id);
-      if (cfg_a && cfg_a.vidrio) {
-        const v = cfg_a.vidrio;
-        const tv = params_a.tipo_vidrio || 'vcomon';
-        const fA = tv==='dvh' ? (v.formula_ancho_dvh||v.formula_ancho_vcomon||v.formula_ancho||'') : (v.formula_ancho_vcomon||v.formula_ancho||'');
-        const fH = tv==='dvh' ? (v.formula_alto_dvh||v.formula_alto_vcomon||v.formula_alto||'') : (v.formula_alto_vcomon||v.formula_alto||'');
-        const N_a = Number(params_a.hojas) || 1;
-        if (fA && fH) {
-          const vA = evalFormula(fA, Number(a.ancho), Number(a.alto), N_a);
-          const vH = evalFormula(fH, Number(a.ancho), Number(a.alto), N_a);
-          vidriosArr = Array.from({length: N_a}, (_,i) => ({ ancho: vA, alto: vH, desc: 'Vidrio hoja '+(i+1) }));
+    if (a.es_modulo) {
+      // Modulo: calcular vidrios por seccion con su precio individual
+      const vids = calcularVidriosModulo(a);
+      costos[a.id].vidrios = vids.reduce((s, v) => s + (v.ancho/1000)*(v.alto/1000)*v.precioVid*v.cant, 0);
+    } else {
+      if (!vidriosArr.length) {
+        const params_a = tryParse(a.params, {});
+        const cfg_a = getConfigTipo(a.linea_id, a.tipo_id);
+        if (cfg_a && cfg_a.vidrio) {
+          const v = cfg_a.vidrio;
+          const tv = params_a.tipo_vidrio || 'vcomon';
+          const fA = tv==='dvh' ? (v.formula_ancho_dvh||v.formula_ancho_vcomon||v.formula_ancho||'') : (v.formula_ancho_vcomon||v.formula_ancho||'');
+          const fH = tv==='dvh' ? (v.formula_alto_dvh||v.formula_alto_vcomon||v.formula_alto||'') : (v.formula_alto_vcomon||v.formula_alto||'');
+          const N_a = Number(params_a.hojas) || 1;
+          if (fA && fH) {
+            const vA = evalFormula(fA, Number(a.ancho), Number(a.alto), N_a);
+            const vH = evalFormula(fH, Number(a.ancho), Number(a.alto), N_a);
+            vidriosArr = Array.from({length: N_a}, (_,i) => ({ ancho: vA, alto: vH, desc: 'Vidrio hoja '+(i+1) }));
+          }
         }
       }
+      costos[a.id].vidrios = vidriosArr.reduce((s, v) =>
+        s + (v.ancho/1000)*(v.alto/1000)*Number(a.precio_vidrio||8500), 0) * cant;
     }
-    costos[a.id].vidrios = vidriosArr.reduce((s, v) =>
-      s + (v.ancho/1000)*(v.alto/1000)*Number(a.precio_vidrio||8500), 0) * cant;
     costos[a.id].herrajes = (herrajesDetalleMap[a.id] || []).reduce((s, h) => s + h.subtotal, 0);
   }
 
@@ -1026,7 +1081,15 @@ async function loadAll() {
       sheetsGet(SHEETS.config),
     ]);
     state.presupuestos = presupuestos;
-    state.aberturas = aberturas.map(a => ({ ...a, params: tryParse(a.params, {}), optimizacion: tryParse(a.optimizacion, []), vidrios: tryParse(a.vidrios, []), perfiles_snap: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : null; })(a.perfiles_snap), herrajes_snap: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : null; })(a.herrajes_snap) }));
+    state.aberturas = aberturas.map(a => ({ ...a,
+      params: tryParse(a.params, {}),
+      optimizacion: tryParse(a.optimizacion, []),
+      vidrios: tryParse(a.vidrios, []),
+      es_modulo: a.es_modulo === true || a.es_modulo === 'true' || a.es_modulo === '1',
+      secciones: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : []; })(a.secciones),
+      perfiles_snap: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : null; })(a.perfiles_snap),
+      herrajes_snap: (function(v){ const p = Array.isArray(v) ? v : tryParse(v, null); return Array.isArray(p) ? p : null; })(a.herrajes_snap)
+    }));
     state.lineas     = lineas.length     ? lineas     : LINEAS_DEFAULT;
     state.perfiles   = perfiles.length   ? perfiles   : PERFILES_DEFAULT;
     state.herrajes   = herrajes.length   ? herrajes   : HERRAJES_DEFAULT;
@@ -1240,27 +1303,26 @@ function renderDetalle() {
 
     const abCards = abs.map((a, idx) => {
       const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0, herrajesDetalle: [] };
-      // calcularCostoAberturas ya devuelve el costo total para las N unidades (bin packing con cant*piezas)
       const cTotal = c.perfiles + c.vidrios + c.herrajes;
-      // Herrajes editables inline — usan snap si existe, sino calculados
-      // Usar snap si existe (array en memoria o string parseado), sino detalle calculado
-      const herrajesEditables = _getHerrajesSnapAb(a);
-      // Dropdown opciones de herrajes para esta linea
-      const herrajesOptsAb = state.herrajes
-        .filter(hh => hh.linea_id === a.linea_id)
-        .map(hh => hh.id + '|' + hh.nombre + '|' + hh.precio + '|' + (hh.unidad||'u'))
-        .join(',');
 
+      // MODULO COMPUESTO — card expandible
+      if (a.es_modulo) {
+        return _renderModuloCard(a, c, cTotal);
+      }
+
+      // ABERTURA SIMPLE — card original      // ABERTURA SIMPLE — card original
+      const herrajesEditables = _getHerrajesSnapAb(a);
       const herrajesHtml = herrajesEditables.map(function(h, hi) {
         return _renderHerrajeRow(a.id, a.linea_id, a.cantidad, h, hi);
       }).join('');
+      const tvBadge = tryParse(a.params,{}).tipo_vidrio==='dvh' ? ' · <span style="color:var(--accent);font-size:11px;">DVH</span>' : '';
 
       return `
       <div class="ab-card" style="flex-direction:column;gap:10px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
           <div style="flex:1">
             <div class="ab-nombre">${a.nombre}</div>
-            <div class="ab-meta">${a.ancho}x${a.alto} mm · ${a.cantidad} u. · ${a.linea}${tryParse(a.params,{}).tipo_vidrio==='dvh' ? ' · <span style="color:var(--accent);font-size:11px;">DVH</span>' : ''}</div>
+            <div class="ab-meta">${a.ancho}x${a.alto} mm · ${a.cantidad} u. · ${a.linea}${tvBadge}</div>
           </div>
           <div style="text-align:right">
             <div class="ab-costo">${fmt(cTotal)}</div>
@@ -1271,22 +1333,19 @@ function renderDetalle() {
           <div style="flex:1;min-width:160px;">
             <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Desglose</div>
             <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;">
-              <span>Perfiles aluminio</span>
-              <span style="font-family:'DM Mono',monospace;">${fmt(c.perfiles)}</span>
+              <span>Perfiles aluminio</span><span style="font-family:'DM Mono',monospace;">${fmt(c.perfiles)}</span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;">
-              <span>Vidrios</span>
-              <span style="font-family:'DM Mono',monospace;">${fmt(c.vidrios)}</span>
+              <span>Vidrios</span><span style="font-family:'DM Mono',monospace;">${fmt(c.vidrios)}</span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;">
-              <span>Herrajes</span>
-              <span style="font-family:'DM Mono',monospace;">${fmt(c.herrajes)}</span>
+              <span>Herrajes</span><span style="font-family:'DM Mono',monospace;">${fmt(c.herrajes)}</span>
             </div>
           </div>
           <div style="flex:2;min-width:200px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
               <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Herrajes y accesorios</span>
-              <button onclick="showModalAgregarHerraje('${a.id}')" style="font-size:11px;padding:3px 10px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--text3);cursor:pointer;font-family:'DM Sans',sans-serif;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">+ Agregar herraje</button>
+              <button onclick="showModalAgregarHerraje('${a.id}')" style="font-size:11px;padding:3px 10px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--text3);cursor:pointer;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">+ Agregar herraje</button>
             </div>
             ${herrajesHtml || '<div style="font-size:12px;color:var(--text3);">Sin herrajes</div>'}
           </div>
@@ -1308,7 +1367,8 @@ function renderDetalle() {
       <div id="addAbWrap"></div>
       ${['aprobado','rechazado'].includes(p.estado)
         ? '<div style="padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;font-size:13px;color:var(--text3);text-align:center;">El presupuesto esta ' + p.estado + ' — no se pueden agregar mas aberturas.</div>'
-        : '<button class="btn-add-ab" onclick="showAddAbertura()">+ Agregar abertura</button>'}`;
+        : '<button class="btn-add-ab" onclick="showAddAbertura()">+ Abertura simple</button>'
+          + '<button class="btn-add-ab" style="margin-left:8px;background:var(--surface2);border:1px solid var(--accent)44;" onclick="showAddModulo()">+ Modulo compuesto</button>'}`;
   }
 
   if (tab === 'calculo') {
@@ -3114,6 +3174,223 @@ async function crearPresupuesto() {
   }
 }
 
+// ============================================================
+// MODULO COMPUESTO
+// ============================================================
+function toggleModuloExpanded(abId) {
+  if (!state._moduloExpanded) state._moduloExpanded = {};
+  state._moduloExpanded[abId] = !state._moduloExpanded[abId];
+  render();
+}
+
+function _renderModuloCard(a, c, cTotal) {
+  const expanded = !!(state._moduloExpanded && state._moduloExpanded[a.id]);
+  const svgMod = svgModulo(a.secciones, a.alto, 180, 100);
+  const s = String.fromCharCode(39);
+
+  let seccionesHtml = '';
+  if (expanded && a.secciones) {
+    for (const sec of a.secciones) {
+      seccionesHtml += '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--bg);border-radius:8px;margin-bottom:6px;">'
+        + '<div style="flex:1;">'
+        +   '<div style="font-size:13px;color:var(--text);font-weight:600;">' + sec.nombre + '</div>'
+        +   '<div style="font-size:11px;color:var(--text3);">' + sec.ancho + 'x' + a.alto + 'mm · '
+        +     '<span style="color:' + (sec.tipo_vidrio==='dvh'?'var(--accent)':'#0ea5e9') + ';">'
+        +     (sec.tipo_vidrio==='dvh'?'DVH':'V. Comun') + '</span>'
+        +   '</div>'
+        + '</div>'
+        + '</div>';
+    }
+  }
+
+  const expandedContent = !expanded ? '' :
+    '<div style="border-top:1px solid var(--border);padding-top:12px;">'
+    +   '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px;">'
+    +     '<div style="flex:1;min-width:160px;">'
+    +       '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">Desglose total</div>'
+    +       '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;"><span>Perfiles</span><span>' + fmt(c.perfiles) + '</span></div>'
+    +       '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;"><span>Vidrios</span><span>' + fmt(c.vidrios) + '</span></div>'
+    +       '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);padding:2px 0;"><span>Herrajes</span><span>' + fmt(c.herrajes) + '</span></div>'
+    +     '</div>'
+    +     '<div style="flex:1;min-width:160px;">' + svgMod + '</div>'
+    +   '</div>'
+    +   '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Secciones (' + a.secciones.length + ')</div>'
+    +   seccionesHtml
+    +   '<div style="margin-top:8px;">'
+    +     '<button class="btn-danger" style="font-size:12px;" '
+    +     'onclick="eliminarAbertura(' + s + a.id + s + ')">x Eliminar modulo</button>'
+    +   '</div>'
+    + '</div>';
+
+  return '<div class="ab-card" style="flex-direction:column;gap:0;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:4px 0;" '
+    + 'onclick="toggleModuloExpanded(' + s + a.id + s + ')">'
+    +   '<div style="flex:1;">'
+    +     '<div style="display:flex;align-items:center;gap:8px;">'
+    +       '<div class="ab-nombre">' + a.nombre + '</div>'
+    +       '<span style="font-size:10px;font-weight:700;color:var(--accent);border:1px solid var(--accent)44;padding:1px 6px;border-radius:10px;">MODULO</span>'
+    +     '</div>'
+    +     '<div class="ab-meta">' + a.secciones.length + ' secciones · ' + a.ancho + 'x' + a.alto + ' mm · ' + a.cantidad + ' u.</div>'
+    +   '</div>'
+    +   '<div style="display:flex;align-items:center;gap:12px;">'
+    +     '<div class="ab-costo">' + fmt(cTotal) + '</div>'
+    +     '<span style="color:var(--text3);font-size:16px;">' + (expanded ? '▲' : '▼') + '</span>'
+    +   '</div>'
+    + '</div>'
+    + expandedContent
+    + '</div>';
+}
+
+function showAddModulo() {
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (!p) return;
+  // Build initial state for module
+  window._moduloSecciones = [];
+  window._moduloAlto = 1000;
+  window._moduloCant = 1;
+  _renderModalModulo();
+}
+
+function _renderModalModulo() {
+  const secciones = window._moduloSecciones || [];
+  const alto = window._moduloAlto || 1000;
+  const cant = window._moduloCant || 1;
+
+  // Build sections HTML
+  const seccionesHtml = secciones.length
+    ? secciones.map((sec, i) => {
+        const tipNombre = sec.nombre || sec.tipologia_id;
+        return '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:8px;margin-bottom:6px;">'
+          + '<div style="flex:1;font-size:13px;color:var(--text);">' + tipNombre + '</div>'
+          + '<div style="font-size:12px;color:var(--text3);">' + sec.ancho + 'mm</div>'
+          + '<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:' + (sec.tipo_vidrio==='dvh'?'#00E5A022':'#0ea5e922') + ';color:' + (sec.tipo_vidrio==='dvh'?'var(--accent)':'#0ea5e9') + ';">' + (sec.tipo_vidrio==='dvh'?'DVH':'V.Comun') + '</span>'
+          + '<button onclick="_eliminarSeccion(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:14px;">x</button>'
+          + '</div>';
+      }).join('')
+    : '<div style="font-size:12px;color:var(--text3);padding:8px;">Agrega secciones con el boton de abajo</div>';
+
+  const anchoTotal = secciones.reduce((s, sec) => s + Number(sec.ancho), 0);
+  const svgPreview = secciones.length ? svgModulo(secciones, alto, 300, 120) : '';
+  const puedeAgregar = secciones.length >= 2;
+
+  showModal(
+    '<div class="modal-title">Modulo Compuesto</div>'
+    + '<div class="form-row" style="gap:12px;margin-bottom:12px;">'
+    + '<div class="form-group" style="flex:1;"><label>Alto vano (mm)</label>'
+    + '<input type="number" id="mod_alto" value="' + alto + '" oninput="_moduloAlto=Number(this.value);_actualizarSvgModulo()"></div>'
+    + '<div class="form-group" style="flex:1;"><label>Cantidad</label>'
+    + '<input type="number" id="mod_cant" value="' + cant + '" min="1" oninput="_moduloCant=Number(this.value)||1"></div>'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Secciones · Ancho total: ' + anchoTotal + 'mm</div>'
+    + '<div id="mod_secciones">' + seccionesHtml + '</div>'
+    + (svgPreview ? '<div id="mod_svg_wrap" style="margin:12px 0;text-align:center;">' + svgPreview + '</div>' : '<div id="mod_svg_wrap"></div>')
+    + '<div style="border:1px dashed var(--border);border-radius:8px;padding:12px;margin-top:8px;">'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Agregar seccion</div>'
+    + '<div class="form-row" style="gap:8px;">'
+    + _buildTipologiaSelect()
+    + '<div class="form-group" style="flex:1;min-width:90px;"><label>Ancho (mm)</label>'
+    + '<input type="number" id="mod_sec_ancho" placeholder="800" style="font-family:monospace;"></div>'
+    + '<div class="form-group" style="flex:1;min-width:90px;"><label>Tipo vidrio</label>'
+    + '<select id="mod_sec_tv"><option value="vcomon">V. Comun</option><option value="dvh">DVH</option></select></div>'
+    + '</div>'
+    + '<button class="btn-secondary" style="width:100%;margin-top:4px;" onclick="_agregarSeccion()">+ Agregar seccion</button>'
+    + '</div>'
+    + '<div class="modal-actions" style="margin-top:12px;">'
+    + '<button class="btn-secondary" onclick="closeModal()">Cancelar</button>'
+    + '<button class="btn-primary" id="btnAgregarModulo" onclick="confirmarAgregarModulo()" ' + (!puedeAgregar?'disabled style="opacity:0.5;"':'') + '>Agregar modulo</button>'
+    + '</div>'
+  );
+}
+
+function _buildTipologiaSelect() {
+  const tipos = getTiposLinea(state.lineas[0]?.id || 'modena');
+  const opts = tipos.map(t => '<option value="' + t.id + '">' + t.nombre + '</option>').join('');
+  return '<div class="form-group" style="flex:2;min-width:150px;"><label>Tipologia</label>'
+    + '<select id="mod_sec_tipo">' + opts + '</select></div>';
+}
+
+function _agregarSeccion() {
+  const tipoId = document.getElementById('mod_sec_tipo')?.value;
+  const ancho  = Number(document.getElementById('mod_sec_ancho')?.value);
+  const tv     = document.getElementById('mod_sec_tv')?.value || 'vcomon';
+  if (!tipoId || !ancho) { toast('Completá tipologia y ancho', 'error'); return; }
+  const tipos = getTiposLinea(state.lineas[0]?.id || 'modena');
+  const tipo = tipos.find(t => t.id === tipoId);
+  if (!window._moduloSecciones) window._moduloSecciones = [];
+  window._moduloSecciones.push({ tipologia_id: tipoId, nombre: tipo?.nombre || tipoId, ancho, tipo_vidrio: tv });
+  _renderModalModulo();
+}
+
+function _eliminarSeccion(i) {
+  if (window._moduloSecciones) window._moduloSecciones.splice(i, 1);
+  _renderModalModulo();
+}
+
+function _actualizarSvgModulo() {
+  const wrap = document.getElementById('mod_svg_wrap');
+  if (!wrap || !window._moduloSecciones?.length) return;
+  const alto = Number(document.getElementById('mod_alto')?.value) || 1000;
+  wrap.innerHTML = svgModulo(window._moduloSecciones, alto, 300, 120);
+}
+
+async function confirmarAgregarModulo() {
+  const btn = document.getElementById('btnAgregarModulo');
+  setBtnLoading(btn, true, 'Calculando...');
+  try {
+    const secciones = window._moduloSecciones || [];
+    const alto = Number(document.getElementById('mod_alto')?.value) || 1000;
+    const cant = Number(document.getElementById('mod_cant')?.value) || 1;
+    if (secciones.length < 2) { toast('Agrega al menos 2 secciones', 'error'); setBtnLoading(btn, false); return; }
+
+    const anchoTotal = secciones.reduce((s, sec) => s + Number(sec.ancho), 0);
+    const nombre = secciones.map(s => s.nombre).join(' + ');
+    const linea_id = state.lineas[0]?.id || 'modena';
+    const linea = state.lineas[0];
+    const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+    const precioKg = getPrecioKgPresupuesto(p);
+
+    const ab = {
+      id: genId(),
+      presupuesto_id: state.presupuestoActivo,
+      linea_id,
+      linea: linea?.nombre || linea_id,
+      tipo_id: 'modulo-compuesto',
+      nombre,
+      ancho: anchoTotal, alto, cantidad: cant,
+      params: JSON.stringify({}),
+      precio_vidrio: 0, // vidrio calculado por seccion
+      precio_kg: precioKg,
+      es_modulo: true,
+      secciones: JSON.stringify(secciones),
+      costo_perfiles: 0, costo_vidrios: 0, costo_herrajes: 0,
+      optimizacion: '[]', vidrios: '[]',
+      perfiles_snap: JSON.stringify(state.perfiles.filter(pf => pf.linea_id === linea_id)
+        .map(pf => ({ id: pf.id, linea_id: pf.linea_id, codigo: pf.codigo, nombre: pf.nombre, peso_tira: pf.peso_tira, largo_barra: pf.largo_barra }))),
+      herrajes_snap: '[]',
+    };
+
+    // Calculate costs
+    const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+    const costos = calcularCostoAberturas([...absExistentes, ab], state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'proporcional', state.umbral_sobrante);
+    const c = costos[ab.id] || {};
+    ab.costo_perfiles = c.perfiles || 0;
+    ab.costo_vidrios  = c.vidrios  || 0;
+    ab.costo_herrajes = c.herrajes || 0;
+
+    state.aberturas.push(ab);
+    await sheetsAppend(SHEETS.aberturas, ab);
+    await recalcularTotal();
+    closeModal();
+    toast('Modulo agregado');
+  } catch(e) {
+    console.error(e);
+    toast('Error al agregar modulo', 'error');
+    setBtnLoading(btn, false);
+  } finally {
+    render();
+  }
+}
+
 function showAddAbertura() {
   const lineaOpts = state.lineas.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
   showModal(`
@@ -3636,6 +3913,45 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH) {
     + '</svg>';
 }
 
+// SVG para módulo compuesto — dibuja secciones lado a lado
+function svgModulo(secciones, altoMm, maxW, maxH) {
+  maxW = maxW || 280; maxH = maxH || 180;
+  if (!secciones || !secciones.length) return '';
+  const anchoTotal = secciones.reduce((s, sec) => s + Number(sec.ancho), 0);
+  const ratio = anchoTotal / altoMm;
+  let W, H;
+  if (ratio >= 1) { W = maxW; H = Math.round(maxW / ratio); if (H > maxH) { H = maxH; W = Math.round(maxH * ratio); } }
+  else { H = maxH; W = Math.round(maxH * ratio); if (W > maxW) { W = maxW; H = Math.round(maxW / ratio); } }
+  W = Math.max(W, 60); H = Math.max(H, 40);
+  const pad = 5;
+  const fc = '#1e3a5f', gc = '#0ea5e9', gf = '#dbeafe';
+  const sw = Math.max(2, Math.round(Math.min(W,H)/30));
+  const iW = W - pad*2, iH = H - pad*2;
+  const totalH = H + 18;
+  // Draw each section proportionally
+  let interior = '';
+  let x = pad;
+  for (const sec of secciones) {
+    const secW = Math.round((Number(sec.ancho) / anchoTotal) * iW);
+    interior += '<rect x="'+x+'" y="'+pad+'" width="'+secW+'" height="'+iH+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
+    // Label
+    const label = sec.nombre ? sec.nombre.substring(0,8) : '';
+    interior += '<text x="'+(x+secW/2)+'" y="'+(pad+iH/2+4)+'" text-anchor="middle" font-size="7" fill="'+fc+'" font-family="monospace">'+label+'</text>';
+    if (sec.tipo_vidrio === 'dvh') {
+      interior += '<text x="'+(x+secW/2)+'" y="'+(pad+iH/2+13)+'" text-anchor="middle" font-size="6" fill="#00b37e" font-family="monospace">DVH</text>';
+    }
+    x += secW;
+    // Divider between sections
+    if (x < W - pad) interior += '<line x1="'+x+'" y1="'+pad+'" x2="'+x+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
+  }
+  const labelTotal = anchoTotal + 'x' + altoMm + 'mm';
+  return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg">'
+    + '<rect x="0" y="0" width="'+W+'" height="'+H+'" rx="2" fill="#f8fafc" stroke="'+fc+'" stroke-width="'+sw+'"/>'
+    + interior
+    + '<text x="'+(W/2)+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="8" fill="'+fc+'" font-family="monospace" font-weight="600">'+labelTotal+'</text>'
+    + '</svg>';
+}
+
 // Convierte SVG a PNG data URI via Canvas (para Word)
 function svgToPngDataUri(tipo_id, anchoMm, altoMm) {
   return new Promise((resolve) => {
@@ -3677,24 +3993,37 @@ function imprimirPresupuesto(id) {
   const totalFinal = subtotal * (1 + markup / 100);
 
   const aberturasHtml = abs.map((a, i) => {
-    const svg = svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180);
+    const svg = a.es_modulo ? svgModulo(a.secciones, a.alto, 130, 80) : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180);
     const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0 };
     const precioUnitarioSinMarkup = c.perfiles + c.vidrios + c.herrajes;
     const precioUnitario = precioUnitarioSinMarkup * (1 + markup / 100);
     const precioTotal = precioUnitario * Number(a.cantidad);
+    const seccionesListPdf = a.es_modulo && a.secciones && a.secciones.length
+      ? '<div style="margin-top:6px;padding:6px 10px;background:#f8fafc;border-radius:6px;border-left:3px solid #00b37e;">'
+        + a.secciones.map(sec =>
+            '<div style="font-size:11px;color:#475569;padding:1px 0;">'
+            + '<b>' + sec.nombre + '</b> · ' + sec.ancho + 'x' + a.alto + 'mm'
+            + (sec.tipo_vidrio === 'dvh' ? ' · <span style="color:#00b37e;font-weight:700;">DVH</span>' : '')
+            + '</div>'
+          ).join('')
+        + '</div>'
+      : '';
     return `
       <div style="display:flex;align-items:center;gap:24px;padding:18px 0;border-bottom:1px solid #e2e8f0;break-inside:avoid;">
         <div style="flex:0 0 150px;display:flex;align-items:center;justify-content:center;">${svg}</div>
         <div style="flex:1;">
-          <div style="font-size:16px;font-weight:700;color:#0f172a;font-family:'Syne',sans-serif;">${a.nombre}</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="font-size:16px;font-weight:700;color:#0f172a;font-family:'Syne',sans-serif;">${a.nombre}</div>
+            ${a.es_modulo ? '<span style="font-size:10px;font-weight:700;color:#00b37e;border:1px solid #00b37e44;padding:1px 6px;border-radius:8px;">MODULO</span>' : ''}
+          </div>
           <div style="margin-top:6px;display:flex;gap:16px;flex-wrap:wrap;">
             <span style="font-size:13px;color:#475569;"><b>Medidas:</b> ${a.ancho} x ${a.alto} mm</span>
             <span style="font-size:13px;color:#475569;"><b>Cantidad:</b> ${a.cantidad} u. · <b>${fmt(precioUnitario)}</b> c/u</span>
             <span style="font-size:13px;color:#475569;"><b>Linea:</b> ${a.linea}</span>
           </div>
+          ${seccionesListPdf}
           <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
             <span style="background:#e0f2fe;color:#0369a1;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;">${p.color_al || ''}</span>
-
           </div>
         </div>
         <div style="text-align:right;min-width:80px;">
