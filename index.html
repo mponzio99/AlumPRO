@@ -633,8 +633,9 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
 // ============================================================
 function calcularModulo(a, perfilesDB, herrajesDB) {
   // Expande un modulo compuesto en cortes individuales por seccion
-  const secciones = Array.isArray(a.secciones) ? a.secciones
-    : (Array.isArray(tryParse(a.secciones, null)) ? tryParse(a.secciones, null) : []);
+  let secciones = a.secciones;
+  if (!Array.isArray(secciones)) secciones = tryParse(secciones, []);
+  if (!Array.isArray(secciones)) secciones = [];
   if (!secciones.length) return [];
   const alto = Number(a.alto);
   const cant = Number(a.cantidad) || 1;
@@ -651,8 +652,9 @@ function calcularModulo(a, perfilesDB, herrajesDB) {
 }
 
 function calcularVidriosModulo(a) {
-  const secciones = Array.isArray(a.secciones) ? a.secciones
-    : (Array.isArray(tryParse(a.secciones, null)) ? tryParse(a.secciones, null) : []);
+  let secciones = a.secciones;
+  if (!Array.isArray(secciones)) secciones = tryParse(secciones, []);
+  if (!Array.isArray(secciones)) secciones = [];
   if (!secciones.length) return [];
   const alto = Number(a.alto);
   const cant = Number(a.cantidad) || 1;
@@ -3184,13 +3186,16 @@ function toggleModuloExpanded(abId) {
 }
 
 function _renderModuloCard(a, c, cTotal) {
+  let secciones = a.secciones;
+  if (!Array.isArray(secciones)) secciones = tryParse(secciones, []);
+  if (!Array.isArray(secciones)) secciones = [];
   const expanded = !!(state._moduloExpanded && state._moduloExpanded[a.id]);
-  const svgMod = svgModulo(a.secciones, a.alto, 180, 100);
+  const svgMod = svgModulo(secciones, a.alto, 180, 100);
   const s = String.fromCharCode(39);
 
   let seccionesHtml = '';
-  if (expanded && a.secciones) {
-    for (const sec of a.secciones) {
+  if (expanded && secciones.length) {
+    for (const sec of secciones) {
       seccionesHtml += '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--bg);border-radius:8px;margin-bottom:6px;">'
         + '<div style="flex:1;">'
         +   '<div style="font-size:13px;color:var(--text);font-weight:600;">' + sec.nombre + '</div>'
@@ -3214,7 +3219,7 @@ function _renderModuloCard(a, c, cTotal) {
     +     '</div>'
     +     '<div style="flex:1;min-width:160px;">' + svgMod + '</div>'
     +   '</div>'
-    +   '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Secciones (' + a.secciones.length + ')</div>'
+    +   '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Secciones (' + secciones.length + ')</div>'
     +   seccionesHtml
     +   '<div style="margin-top:8px;">'
     +     '<button class="btn-danger" style="font-size:12px;" '
@@ -3349,6 +3354,7 @@ async function confirmarAgregarModulo() {
     const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKg = getPrecioKgPresupuesto(p);
 
+    const seccionesJson = JSON.stringify(secciones);
     const ab = {
       id: genId(),
       presupuesto_id: state.presupuestoActivo,
@@ -3358,34 +3364,40 @@ async function confirmarAgregarModulo() {
       nombre,
       ancho: anchoTotal, alto, cantidad: cant,
       params: JSON.stringify({}),
-      precio_vidrio: 0, // vidrio calculado por seccion
+      precio_vidrio: 0,
       precio_kg: precioKg,
-      es_modulo: true,
-      secciones: JSON.stringify(secciones),
+      es_modulo: 'true', // string para compatibilidad con Sheet
+      secciones: seccionesJson,
       costo_perfiles: 0, costo_vidrios: 0, costo_herrajes: 0,
       optimizacion: '[]', vidrios: '[]',
       perfiles_snap: JSON.stringify(state.perfiles.filter(pf => pf.linea_id === linea_id)
         .map(pf => ({ id: pf.id, linea_id: pf.linea_id, codigo: pf.codigo, nombre: pf.nombre, peso_tira: pf.peso_tira, largo_barra: pf.largo_barra }))),
       herrajes_snap: '[]',
     };
+    // In-memory: use proper types
+    ab._esModuloMem = true;
+    ab._seccionesMem = secciones;
 
-    // Calculate costs
+    // Calculate costs using in-memory normalized object
+    const abMem = { ...ab, es_modulo: true, secciones };
     const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
-    const costos = calcularCostoAberturas([...absExistentes, ab], state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'proporcional', state.umbral_sobrante);
-    const c = costos[ab.id] || {};
-    ab.costo_perfiles = c.perfiles || 0;
-    ab.costo_vidrios  = c.vidrios  || 0;
-    ab.costo_herrajes = c.herrajes || 0;
-
-    state.aberturas.push(ab);
+    const costos = calcularCostoAberturas([...absExistentes, abMem], state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'proporcional', state.umbral_sobrante);
+    const c = costos[abMem.id] || {};
+    abMem.costo_perfiles = c.perfiles || 0;
+    abMem.costo_vidrios  = c.vidrios  || 0;
+    abMem.costo_herrajes = c.herrajes || 0;
+    ab.costo_perfiles = abMem.costo_perfiles;
+    ab.costo_vidrios  = abMem.costo_vidrios;
+    ab.costo_herrajes = abMem.costo_herrajes;
+    state.aberturas.push(abMem);
     await sheetsAppend(SHEETS.aberturas, ab);
     await recalcularTotal();
     closeModal();
     toast('Modulo agregado');
   } catch(e) {
-    console.error(e);
-    toast('Error al agregar modulo', 'error');
-    setBtnLoading(btn, false);
+    console.error('Error modulo:', e);
+    toast('Error: ' + (e.message || e), 'error');
+    if (btn) setBtnLoading(btn, false);
   } finally {
     render();
   }
@@ -3914,9 +3926,12 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH) {
 }
 
 // SVG para módulo compuesto — dibuja secciones lado a lado
-function svgModulo(secciones, altoMm, maxW, maxH) {
+function svgModulo(secsRaw, altoMm, maxW, maxH) {
+  let secciones = secsRaw;
+  if (!Array.isArray(secciones)) secciones = tryParse(secciones, []);
+  if (!Array.isArray(secciones)) secciones = [];
   maxW = maxW || 280; maxH = maxH || 180;
-  if (!secciones || !secciones.length) return '';
+  if (!secciones.length) return '';
   const anchoTotal = secciones.reduce((s, sec) => s + Number(sec.ancho), 0);
   const ratio = anchoTotal / altoMm;
   let W, H;
