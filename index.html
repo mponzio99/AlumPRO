@@ -668,7 +668,11 @@ function calcularVidriosModulo(a) {
     const params = { ...(tryParse(a.params, {})), tipo_vidrio: tv, hojas: sec.hojas || hojasDefault };
     const N = Number(params.hojas) || 1;
     const cfg = getConfigTipo(a.linea_id, sec.tipologia_id);
-    if (!cfg || !cfg.vidrio) continue;
+    if (!cfg || !cfg.vidrio) {
+      // No vidrio config — skip but don't fail silently
+      console.warn('Sin config vidrio para', sec.tipologia_id);
+      continue;
+    }
     const v = cfg.vidrio;
     const fA = tv === 'dvh' ? (v.formula_ancho_dvh || v.formula_ancho_vcomon || '') : (v.formula_ancho_vcomon || '');
     const fH = tv === 'dvh' ? (v.formula_alto_dvh  || v.formula_alto_vcomon  || '') : (v.formula_alto_vcomon  || '');
@@ -3304,7 +3308,7 @@ function _renderModalModulo() {
     + '<div class="form-group" style="flex:1;"><label>Cantidad</label>'
     + '<input type="number" id="mod_cant" value="' + cant + '" min="1" oninput="_moduloCant=Number(this.value)||1"></div>'
     + '</div>'
-    + '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Secciones · Ancho total: ' + anchoTotal + 'mm</div>'
+    + '<div id="mod_ancho_total" style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Secciones · Ancho total: ' + anchoTotal + 'mm</div>'
     + '<div id="mod_secciones">' + seccionesHtml + '</div>'
     + (svgPreview ? '<div id="mod_svg_wrap" style="margin:12px 0;text-align:center;">' + svgPreview + '</div>' : '<div id="mod_svg_wrap"></div>')
     + '<div style="border:1px dashed var(--border);border-radius:8px;padding:12px;margin-top:8px;">'
@@ -3342,20 +3346,67 @@ function _guardarSeleccionSeccion() {
 }
 
 function _agregarSeccion() {
-  const tipoId = document.getElementById('mod_sec_tipo')?.value;
+  // Read values directly from DOM (most reliable)
+  const sel = document.getElementById('mod_sec_tipo');
+  const tipoId = sel ? sel.options[sel.selectedIndex]?.value : '';
   const ancho  = Number(document.getElementById('mod_sec_ancho')?.value);
   const tv     = document.getElementById('mod_sec_tv')?.value || 'vcomon';
-  if (!tipoId || !ancho) { toast('Completá tipologia y ancho', 'error'); return; }
+  if (!tipoId || !ancho) { toast('Completa tipologia y ancho', 'error'); return; }
   const tipos = getTiposLinea(state.lineas[0]?.id || 'modena');
   const tipo = tipos.find(t => t.id === tipoId);
   if (!window._moduloSecciones) window._moduloSecciones = [];
   window._moduloSecciones.push({ tipologia_id: tipoId, nombre: tipo?.nombre || tipoId, ancho, tipo_vidrio: tv });
-  _renderModalModulo();
+  // Save current form state before re-render
+  window._moduloSecTipo = tipoId;
+  window._moduloAlto = Number(document.getElementById('mod_alto')?.value) || 1000;
+  window._moduloCant = Number(document.getElementById('mod_cant')?.value) || 1;
+  // Update only the secciones list and SVG — don't rebuild whole modal
+  _actualizarSeccionesUI();
+}
+
+function _actualizarSeccionesUI() {
+  const secciones = window._moduloSecciones || [];
+  const alto = window._moduloAlto || 1000;
+
+  // Update secciones list
+  const wrap = document.getElementById('mod_secciones');
+  if (wrap) {
+    wrap.innerHTML = secciones.length
+      ? secciones.map((sec, i) =>
+          '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:8px;margin-bottom:6px;">'
+          + '<div style="flex:1;font-size:13px;color:var(--text);">' + sec.nombre + '</div>'
+          + '<div style="font-size:12px;color:var(--text3);">' + sec.ancho + 'mm</div>'
+          + '<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:' + (sec.tipo_vidrio==='dvh'?'#00E5A022':'#0ea5e922') + ';color:' + (sec.tipo_vidrio==='dvh'?'var(--accent)':'#0ea5e9') + ';">' + (sec.tipo_vidrio==='dvh'?'DVH':'V.Comun') + '</span>'
+          + '<button onclick="_eliminarSeccion(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:14px;">x</button>'
+          + '</div>'
+        ).join('')
+      : '<div style="font-size:12px;color:var(--text3);padding:8px;">Agrega secciones con el boton de abajo</div>';
+  }
+
+  // Update SVG
+  const svgWrap = document.getElementById('mod_svg_wrap');
+  if (svgWrap) {
+    svgWrap.innerHTML = secciones.length ? svgModulo(secciones, alto, 300, 120) : '';
+  }
+
+  // Update ancho total label
+  const anchoTotal = secciones.reduce((s, sec) => s + Number(sec.ancho), 0);
+  const totalLabel = document.getElementById('mod_ancho_total');
+  if (totalLabel) totalLabel.textContent = 'Secciones · Ancho total: ' + anchoTotal + 'mm';
+
+  // Enable/disable Agregar modulo button
+  const btn = document.getElementById('btnAgregarModulo');
+  if (btn) { btn.disabled = secciones.length < 2; btn.style.opacity = secciones.length < 2 ? '0.5' : '1'; }
+
+  // Clear ancho input for next section
+  const anchoInput = document.getElementById('mod_sec_ancho');
+  if (anchoInput) anchoInput.value = '';
+  window._moduloSecAncho = '';
 }
 
 function _eliminarSeccion(i) {
   if (window._moduloSecciones) window._moduloSecciones.splice(i, 1);
-  _renderModalModulo();
+  _actualizarSeccionesUI();
 }
 
 function _actualizarSvgModulo() {
@@ -3367,7 +3418,10 @@ function _actualizarSvgModulo() {
 
 async function confirmarAgregarModulo() {
   const btn = document.getElementById('btnAgregarModulo');
-  if (btn) { btn.disabled = true; btn.textContent = 'Calculando...'; }
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg> Calculando...</span>';
+  }
   try {
     const secciones = window._moduloSecciones || [];
     const alto = Number(document.getElementById('mod_alto')?.value) || 1000;
