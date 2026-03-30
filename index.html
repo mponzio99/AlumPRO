@@ -3092,7 +3092,7 @@ function showModal(html) {
   ov.addEventListener('click', e => { if (e.target === ov) closeModal(); });
   document.body.appendChild(ov);
 }
-function closeModal() { document.getElementById('modalOverlay')?.remove(); }
+function closeModal() { document.querySelectorAll('#modalOverlay').forEach(el => el.remove()); }
 
 function showModalNuevoPresupuesto() {
   const lineaOpts = state.lineas.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
@@ -3265,10 +3265,12 @@ function _renderModuloCard(a, c, cTotal) {
 function showAddModulo() {
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
   if (!p) return;
-  // Build initial state for module
   window._moduloSecciones = [];
   window._moduloAlto = 1000;
   window._moduloCant = 1;
+  window._moduloSecTipo = null;
+  window._moduloSecAncho = '';
+  window._moduloSecTv = 'vcomon';
   _renderModalModulo();
 }
 
@@ -3365,7 +3367,7 @@ function _actualizarSvgModulo() {
 
 async function confirmarAgregarModulo() {
   const btn = document.getElementById('btnAgregarModulo');
-  setBtnLoading(btn, true, 'Calculando...');
+  if (btn) { btn.disabled = true; btn.textContent = 'Calculando...'; }
   try {
     const secciones = window._moduloSecciones || [];
     const alto = Number(document.getElementById('mod_alto')?.value) || 1000;
@@ -3422,7 +3424,8 @@ async function confirmarAgregarModulo() {
   } catch(e) {
     console.error('Error modulo:', e);
     toast('Error: ' + (e.message || e), 'error');
-    if (btn) setBtnLoading(btn, false);
+    const btn2 = document.getElementById('btnAgregarModulo');
+    if (btn2) { btn2.disabled = false; btn2.textContent = 'Agregar modulo'; }
   } finally {
     render();
   }
