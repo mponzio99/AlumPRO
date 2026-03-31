@@ -1914,6 +1914,14 @@ function renderConfig() {
       </div>
     </div>
     <div style="font-size:11px;color:var(--text3);margin-top:8px;">Variables: <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">W</code> ancho, <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">H</code> alto, <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">N</code> hojas</div>
+    <div style="margin-top:12px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">GIF animado (para el PDF)</div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>URL del GIF</label>
+        <input value="${cfg.gif_url||''}" placeholder="https://ejemplo.com/ventana.gif" onchange="updateConfigGif('${lineaActiva}','${tipoActivo}',this.value)" style="font-size:12px;">
+      </div>
+      ${cfg.gif_url ? '<div style="margin-top:8px;"><img src="'+cfg.gif_url+'" style="height:80px;border-radius:6px;border:1px solid var(--border);" onerror="this.style.display=&quot;none&quot;"></div>' : ''}
+    </div>
     `;
   })() : '';
 
@@ -2098,6 +2106,14 @@ function updateConfigPerfil(linea_id, tipo_id, idx, campo, valor) {
   if (cfg.perfiles[idx]) cfg.perfiles[idx][campo] = valor;
   saveConfigTipo(linea_id, tipo_id);
   toast('Guardado');
+}
+
+function updateConfigGif(linea_id, tipo_id, url) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  cfg.gif_url = url.trim();
+  saveConfigTipo(linea_id, tipo_id);
+  toast('GIF guardado');
+  render();
 }
 
 function updateConfigVidrio(linea_id, tipo_id, campo, valor) {
@@ -4125,7 +4141,23 @@ function imprimirPresupuesto(id) {
   const totalFinal = subtotal * (1 + markup / 100);
 
   const aberturasHtml = abs.map((a, i) => {
-    const svg = a.es_modulo ? svgModulo(a.secciones, a.alto, 130, 80) : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180);
+    const svgContent = a.es_modulo ? svgModulo(a.secciones, a.alto, 130, 80) : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180);
+    // Get gif_url from tipologia config
+    const _cfgGif = a.es_modulo ? null : getConfigTipo(a.linea_id, a.tipo_id);
+    const gifUrl = _cfgGif?.gif_url || '';
+    // Build interactive image element: GIF by default, tap/hover shows SVG
+    const imgId = 'img_' + a.id.replace(/[^a-z0-9]/gi,'_');
+    const svg = gifUrl
+      ? '<div id="' + imgId + '_wrap" style="position:relative;width:130px;cursor:pointer;" '
+        + 'ontouchstart="document.getElementById(\'' + imgId + '_gif\').style.display=\'none\';document.getElementById(\'' + imgId + '_svg\').style.display=\'block\';" '
+        + 'ontouchend="document.getElementById(\'' + imgId + '_gif\').style.display=\'block\';document.getElementById(\'' + imgId + '_svg\').style.display=\'none\';" '
+        + 'onmouseenter="document.getElementById(\'' + imgId + '_gif\').style.display=\'none\';document.getElementById(\'' + imgId + '_svg\').style.display=\'block\';" '
+        + 'onmouseleave="document.getElementById(\'' + imgId + '_gif\').style.display=\'block\';document.getElementById(\'' + imgId + '_svg\').style.display=\'none\';">'
+        + '<img id="' + imgId + '_gif" src="' + gifUrl + '" style="width:130px;height:180px;object-fit:contain;display:block;" onerror="this.style.display=\'none\';document.getElementById(\'' + imgId + '_svg\').style.display=\'block\'">'
+        + '<div id="' + imgId + '_svg" style="display:none;width:130px;">' + svgContent + '</div>'
+        + '<div style="font-size:9px;color:#94a3b8;text-align:center;margin-top:2px;">Mantene presionado</div>'
+        + '</div>'
+      : svgContent;
     const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0 };
     const precioUnitarioSinMarkup = c.perfiles + c.vidrios + c.herrajes;
     const precioUnitario = precioUnitarioSinMarkup * (1 + markup / 100);
