@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presupuesto AlumPro</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: #f1f5f9; min-height: 100vh; }
+.loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; color: #64748b; gap: 16px; }
+.spinner { width: 40px; height: 40px; border: 3px solid #e2e8f0; border-top-color: #00b37e; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.error { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; color: #ef4444; gap: 12px; text-align: center; padding: 24px; }
+.page { max-width: 860px; margin: 0 auto; padding: 32px 20px 60px; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 3px solid #0f172a; }
+.logo { font-size: 28px; font-weight: 800; letter-spacing: -1px; color: #0f172a; }
+.logo span { color: #00b37e; }
+.logo-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+.header-right { text-align: right; }
+.header-right .label { font-size: 11px; color: #94a3b8; text-transform: uppercase; }
+.header-right .fecha { font-size: 12px; color: #475569; }
+.info-box { background: #f8fafc; border-radius: 12px; padding: 20px 24px; margin-bottom: 28px; border: 1px solid #e2e8f0; }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+.info-item .lbl { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+.info-item .val { font-size: 14px; font-weight: 600; color: #0f172a; margin-top: 2px; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.section-title { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin: 28px 0 14px; }
+.abertura { display: flex; align-items: center; gap: 24px; padding: 20px 0; border-bottom: 1px solid #e2e8f0; break-inside: avoid; }
+.abertura-img { flex: 0 0 130px; display: flex; flex-direction: column; align-items: center; }
+.abertura-img img { width: 130px; height: 180px; object-fit: contain; }
+.abertura-img .hint { font-size: 9px; color: #94a3b8; text-align: center; margin-top: 4px; }
+.abertura-body { flex: 1; }
+.abertura-nombre { font-size: 16px; font-weight: 700; color: #0f172a; }
+.abertura-meta { margin-top: 6px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: #475569; }
+.abertura-secciones { margin-top: 6px; padding: 6px 10px; background: #f8fafc; border-radius: 6px; border-left: 3px solid #00b37e; font-size: 11px; color: #475569; }
+.abertura-badges { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
+.abertura-precio { text-align: right; min-width: 90px; }
+.abertura-precio .total { font-size: 16px; font-weight: 800; color: #0f172a; }
+.abertura-precio .num { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.total-box { background: #f8fafc; border: 2px solid #0f172a; border-radius: 12px; padding: 20px 24px; margin-top: 28px; }
+.total-row { display: flex; justify-content: space-between; font-size: 13px; color: #64748b; padding: 3px 0; }
+.total-final { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 2px solid #0f172a; }
+.total-final .lbl { font-size: 14px; font-weight: 700; color: #0f172a; }
+.total-final .val { font-size: 24px; font-weight: 800; color: #00b37e; }
+.comentarios { margin-top: 24px; padding: 16px 20px; background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13px; color: #475569; white-space: pre-wrap; line-height: 1.6; }
+.footer { text-align: center; font-size: 11px; color: #94a3b8; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+.gif-wrap { position: relative; width: 130px; cursor: pointer; user-select: none; }
+.gif-wrap .svg-layer { display: none; }
+.gif-wrap:hover .gif-layer, .gif-wrap.touched .gif-layer { display: none; }
+.gif-wrap:hover .svg-layer, .gif-wrap.touched .svg-layer { display: block; }
+@media (max-width: 600px) {
+  .abertura { flex-direction: column; align-items: flex-start; }
+  .abertura-img { flex: none; }
+  .info-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  <div>Cargando presupuesto...</div>
+</div>
+
+<div class="error" id="error" style="display:none">
+  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  <div id="errorMsg">No se pudo cargar el presupuesto.</div>
+</div>
+
+<div class="page" id="page" style="display:none"></div>
+
+<script>
+// ── Helpers ──────────────────────────────────────────────────
+const fmt = n => '$' + Math.round(Number(n)||0).toLocaleString('es-AR');
+
+function fmtFecha(f) {
+  if (!f) return '-';
+  const p = f.split('/');
+  if (p.length === 3) return p[2].length === 4 ? f : p[1]+'/'+p[0]+'/'+p[2];
+  return f;
+}
+
+function evalFormula(formula, W, H, N) {
+  try { return Math.round(Function('W','H','N','return '+formula)(W, H, N||1)); }
+  catch { return 0; }
+}
+
+// ── SVG de abertura ───────────────────────────────────────────
+function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH) {
+  maxW = maxW||160; maxH = maxH||200;
+  const ratio = anchoMm/altoMm;
+  let W, H;
+  if (ratio >= 1) { W=maxW; H=Math.round(maxW/ratio); if(H>maxH){H=maxH;W=Math.round(maxH*ratio);} }
+  else { H=maxH; W=Math.round(maxH*ratio); if(W>maxW){W=maxW;H=Math.round(maxW/ratio);} }
+  W=Math.max(W,40); H=Math.max(H,40);
+  const pad=6, fc='#1e3a5f', gc='#0ea5e9', gf='#dbeafe';
+  const sw=Math.max(2,Math.round(Math.min(W,H)/30));
+  const iW=W-pad*2, iH=H-pad*2, cx=W/2, cy=H/2;
+  const totalH=H+18;
+  let interior='';
+  if(tipo_id==='ventana-corrediza'||tipo_id==='puerta-ventana-corrediza'){
+    const mid=pad+iW/2;
+    interior='<line x1="'+mid+'" y1="'+pad+'" x2="'+mid+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>'
+      +'<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.8"/>'
+      +'<rect x="'+(mid+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.8"/>';
+  } else if(tipo_id==='puerta-abrir'){
+    const r=Math.min(iW-4,iH-4)*0.85;
+    interior='<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>'
+      +'<path d="M '+(pad+iW)+' '+pad+' A '+r+' '+r+' 0 0 0 '+pad+' '+(pad+r)+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>'
+      +'<circle cx="'+(pad+iW-6)+'" cy="'+cy+'" r="3" fill="'+gc+'"/>';
+  } else {
+    interior='<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
+  }
+  return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg">'
+    +'<rect x="0" y="0" width="'+W+'" height="'+H+'" rx="2" fill="#f8fafc" stroke="'+fc+'" stroke-width="'+sw+'"/>'
+    +interior
+    +'<text x="'+cx+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="9" fill="'+fc+'" font-family="monospace" font-weight="600">'+anchoMm+'x'+altoMm+'mm</text>'
+    +'</svg>';
+}
+
+function svgModulo(secciones, altoMm, maxW, maxH) {
+  if (!secciones || !secciones.length) return '';
+  maxW=maxW||280; maxH=maxH||180;
+  const anchoTotal = secciones.reduce((s,sec)=>s+Number(sec.ancho),0);
+  const ratio=anchoTotal/altoMm;
+  let W,H;
+  if(ratio>=1){W=maxW;H=Math.round(maxW/ratio);if(H>maxH){H=maxH;W=Math.round(maxH*ratio);}}
+  else{H=maxH;W=Math.round(maxH*ratio);if(W>maxW){W=maxW;H=Math.round(maxW/ratio);}}
+  W=Math.max(W,60); H=Math.max(H,40);
+  const pad=5, fc='#1e3a5f', gc='#0ea5e9', gf='#dbeafe';
+  const sw=Math.max(2,Math.round(Math.min(W,H)/30));
+  const iW=W-pad*2, iH=H-pad*2, totalH=H+18;
+  let interior=''; let x=pad;
+  for (const sec of secciones) {
+    const secW=Math.round((Number(sec.ancho)/anchoTotal)*iW);
+    interior+='<rect x="'+x+'" y="'+pad+'" width="'+secW+'" height="'+iH+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
+    const label=(sec.nombre||'').substring(0,8);
+    interior+='<text x="'+(x+secW/2)+'" y="'+(pad+iH/2+4)+'" text-anchor="middle" font-size="7" fill="'+fc+'" font-family="monospace">'+label+'</text>';
+    x+=secW;
+    if(x<W-pad) interior+='<line x1="'+x+'" y1="'+pad+'" x2="'+x+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
+  }
+  return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg">'
+    +'<rect x="0" y="0" width="'+W+'" height="'+H+'" rx="2" fill="#f8fafc" stroke="'+fc+'" stroke-width="'+sw+'"/>'
+    +interior
+    +'<text x="'+(W/2)+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="8" fill="'+fc+'" font-family="monospace" font-weight="600">'+anchoTotal+'x'+altoMm+'mm</text>'
+    +'</svg>';
+}
+
+// ── GIF interactive element ───────────────────────────────────
+function buildImgEl(id, gifUrl, svgContent) {
+  const uid = 'gi_' + id.replace(/[^a-z0-9]/gi,'_');
+  if (!gifUrl) return '<div style="width:130px;">' + svgContent + '</div>';
+  return '<div class="gif-wrap" id="'+uid+'" '
+    + 'ontouchstart="this.classList.add(\'touched\')" '
+    + 'ontouchend="this.classList.remove(\'touched\')">'
+    + '<div class="gif-layer"><img src="'+gifUrl+'" style="width:130px;height:180px;object-fit:contain;" onerror="this.parentElement.parentElement.querySelector(\'.svg-layer\').style.display=\'block\';this.parentElement.style.display=\'none\'"></div>'
+    + '<div class="svg-layer" style="width:130px;">' + svgContent + '</div>'
+    + '<div class="hint">Tocar para ver plano técnico</div>'
+    + '</div>';
+}
+
+// ── Main ──────────────────────────────────────────────────────
+async function init() {
+  const params = new URLSearchParams(window.location.search);
+  const presupuestoId = params.get('id');
+  if (!presupuestoId) { showError('No se especificó un ID de presupuesto.'); return; }
+
+  // Get SCRIPT_URL from parent app config — use same Vercel proxy
+  const SCRIPT_URL = '/api/proxy';
+
+  try {
+    // Fetch all needed data in parallel
+    const [presupuestos, aberturas, config] = await Promise.all([
+      fetch(SCRIPT_URL + '?action=get&sheet=Presupuestos').then(r=>r.json()),
+      fetch(SCRIPT_URL + '?action=get&sheet=Aberturas').then(r=>r.json()),
+      fetch(SCRIPT_URL + '?action=get&sheet=Config').then(r=>r.json()),
+    ]);
+
+    const p = presupuestos.find(x => x.id === presupuestoId);
+    if (!p) { showError('Presupuesto no encontrado.'); return; }
+
+    const abs = aberturas.filter(a => a.presupuesto_id === presupuestoId).map(a => ({
+      ...a,
+      es_modulo: a.es_modulo === true || a.es_modulo === 'true' || a.es_modulo === '1',
+      secciones: (() => { try { const v = JSON.parse(a.secciones||'[]'); return Array.isArray(v)?v:[]; } catch{ return []; } })(),
+    }));
+
+    // Parse config tipologias for gif_url
+    const cfgTipos = {};
+    for (const row of (config||[])) {
+      if (row.key && row.key.startsWith('tipologia_') && !row.key.startsWith('tipologia_custom_meta__')) {
+        try {
+          const parts = row.key.slice('tipologia_'.length);
+          const dIdx = parts.indexOf('__');
+          if (dIdx > 0) {
+            const linea = parts.slice(0,dIdx);
+            const tipo = parts.slice(dIdx+2);
+            if (!cfgTipos[linea]) cfgTipos[linea] = {};
+            cfgTipos[linea][tipo] = JSON.parse(row.value);
+          }
+        } catch {}
+      }
+    }
+
+    const markup = Number(p.markup||0);
+
+    // Calculate totals per abertura (simplified)
+    let subtotal = 0;
+    abs.forEach(a => {
+      subtotal += Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0);
+    });
+    const totalFinal = subtotal * (1 + markup/100);
+
+    // Build aberturas HTML
+    const aberturasHtml = abs.map((a, i) => {
+      const costoAb = (Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0));
+      const precioUnit = costoAb * (1 + markup/100);
+      const precioTotal = precioUnit * (Number(a.cantidad)||1);
+
+      const svgContent = a.es_modulo
+        ? svgModulo(a.secciones, a.alto, 130, 80)
+        : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180);
+
+      const gifUrl = a.es_modulo ? '' : (cfgTipos[a.linea_id]?.[a.tipo_id]?.gif_url || '');
+      const imgEl = buildImgEl(a.id, gifUrl, svgContent);
+
+      const seccHtml = a.es_modulo && a.secciones.length
+        ? '<div class="abertura-secciones">' + a.secciones.map(s =>
+            '<div>' + s.nombre + ' · ' + s.ancho + 'x' + (s.alto||a.alto) + 'mm' + (s.tipo_vidrio==='dvh'?' · DVH':'') + '</div>'
+          ).join('') + '</div>'
+        : '';
+
+      const modbadge = a.es_modulo
+        ? '<span class="badge" style="background:#00E5A022;color:#00b37e;">MÓDULO</span>'
+        : '';
+      const dvhbadge = !a.es_modulo && a.params
+        ? (() => { try { const prms = typeof a.params==='object' ? a.params : JSON.parse(a.params||'{}'); return prms.tipo_vidrio==='dvh' ? '<span class="badge" style="background:#00E5A022;color:#00b37e;">DVH</span>' : ''; } catch{ return ''; } })()
+        : '';
+      const colorbadge = p.color_al ? '<span class="badge" style="background:#e0f2fe;color:#0369a1;">' + p.color_al + '</span>' : '';
+
+      return '<div class="abertura">'
+        + '<div class="abertura-img">' + imgEl + '</div>'
+        + '<div class="abertura-body">'
+          + '<div style="display:flex;align-items:center;gap:8px;">'
+            + '<div class="abertura-nombre">' + a.nombre + '</div>' + modbadge
+          + '</div>'
+          + '<div class="abertura-meta">'
+            + '<span><b>Medidas:</b> ' + a.ancho + ' x ' + a.alto + ' mm</span>'
+            + '<span><b>Cantidad:</b> ' + a.cantidad + ' u. · <b>' + fmt(precioUnit) + '</b> c/u</span>'
+            + '<span><b>Línea:</b> ' + a.linea + '</span>'
+          + '</div>'
+          + seccHtml
+          + '<div class="abertura-badges">' + colorbadge + dvhbadge + '</div>'
+        + '</div>'
+        + '<div class="abertura-precio">'
+          + '<div class="total">' + fmt(precioTotal) + '</div>'
+          + '<div class="num">' + String(i+1).padStart(2,'0') + '</div>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+
+    // Total box
+    const totalHtml = '<div class="total-box">'
+      + '<div class="total-row"><span>Subtotal materiales</span><span>' + fmt(subtotal) + '</span></div>'
+      + (markup ? '<div class="total-row"><span>Ganancia (' + markup + '%)</span><span>' + fmt(subtotal * markup/100) + '</span></div>' : '')
+      + '<div class="total-final"><span class="lbl">TOTAL</span><span class="val">' + fmt(totalFinal) + '</span></div>'
+      + '</div>';
+
+    // Comments
+    const comentHtml = p.comentarios
+      ? '<div class="section-title">Condiciones y notas</div><div class="comentarios">' + p.comentarios + '</div>'
+      : '';
+
+    document.title = 'Presupuesto ' + p.cliente + ' — AlumPro';
+
+    document.getElementById('page').innerHTML = '<div class="header">'
+      + '<div><div class="logo">Alum<span>Pro</span></div><div class="logo-sub">Gestión de Aberturas de Aluminio</div></div>'
+      + '<div class="header-right"><div class="label">Presupuesto</div><div class="fecha">' + fmtFecha(p.fecha) + '</div></div>'
+      + '</div>'
+      + '<div class="info-box"><div class="info-grid">'
+        + '<div class="info-item"><div class="lbl">Cliente</div><div class="val">' + (p.cliente||'-') + '</div></div>'
+        + '<div class="info-item"><div class="lbl">Obra</div><div class="val">' + (p.obra||'-') + '</div></div>'
+        + '<div class="info-item"><div class="lbl">Línea</div><div class="val">' + (p.linea||'-') + '</div></div>'
+        + '<div class="info-item"><div class="lbl">Estado</div><div class="val" style="text-transform:capitalize;">' + (p.estado||'-') + '</div></div>'
+      + '</div></div>'
+      + '<div class="section-title">Aberturas</div>'
+      + aberturasHtml
+      + totalHtml
+      + comentHtml
+      + '<div class="footer">Generado con AlumPro · ' + fmtFecha(p.fecha) + '</div>';
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('page').style.display = 'block';
+
+  } catch(e) {
+    console.error(e);
+    showError('Error al cargar los datos: ' + e.message);
+  }
+}
+
+function showError(msg) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('errorMsg').textContent = msg;
+  document.getElementById('error').style.display = 'flex';
+}
+
+init();
+</script>
+</body>
+</html>
