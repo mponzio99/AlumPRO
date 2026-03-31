@@ -3476,43 +3476,64 @@ function _agregarSeccion() {
 
 function _actualizarSeccionesUI() {
   const secciones = window._moduloSecciones || [];
+  const esH = (window._moduloOrient || 'h') === 'h';
   const alto = window._moduloAlto || 1000;
+  const ancho = window._moduloAncho || 1000;
 
-  // Update secciones list
   const wrap = document.getElementById('mod_secciones');
   if (wrap) {
-    wrap.innerHTML = secciones.length
-      ? secciones.map((sec, i) =>
-          '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:8px;margin-bottom:6px;">'
-          + '<div style="flex:1;font-size:13px;color:var(--text);">' + sec.nombre + '</div>'
-          + '<div style="font-size:12px;color:var(--text3);">' + sec.ancho + 'x' + (sec.alto ? sec.alto : alto) + 'mm</div>'
-          + '<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:' + (sec.tipo_vidrio==='dvh'?'#00E5A022':'#0ea5e922') + ';color:' + (sec.tipo_vidrio==='dvh'?'var(--accent)':'#0ea5e9') + ';">' + (sec.tipo_vidrio==='dvh'?'DVH':'V.Comun') + '</span>'
-          + '<button onclick="_eliminarSeccion(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:14px;">x</button>'
-          + '</div>'
-        ).join('')
-      : '<div style="font-size:12px;color:var(--text3);padding:8px;">Agrega secciones con el boton de abajo</div>';
+    if (!secciones.length) {
+      wrap.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px;">Agrega secciones con el boton de abajo</div>';
+    } else if (esH) {
+      wrap.innerHTML = secciones.map((sec, i) =>
+        '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:8px;margin-bottom:6px;">'
+        + '<div style="flex:1;font-size:13px;color:var(--text);">' + sec.nombre + '</div>'
+        + '<div style="font-size:12px;color:var(--text3);">' + sec.ancho + 'mm</div>'
+        + '<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:' + (sec.tipo_vidrio==='dvh'?'#00E5A022':'#0ea5e922') + ';color:' + (sec.tipo_vidrio==='dvh'?'var(--accent)':'#0ea5e9') + ';">' + (sec.tipo_vidrio==='dvh'?'DVH':'V.Comun') + '</span>'
+        + '<button onclick="_eliminarSeccion(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:14px;">x</button>'
+        + '</div>'
+      ).join('');
+    } else {
+      const totalAlto = secciones.reduce((s, sec) => s + Number(sec.alto||0), 0);
+      wrap.innerHTML = '<div style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:8px;overflow:hidden;">'
+        + secciones.map((sec, i) => {
+            const pct = totalAlto > 0 ? Math.round((Number(sec.alto||0)/totalAlto)*100) : 0;
+            return '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg);border-bottom:1px solid var(--border);">'
+              + '<div style="width:4px;background:var(--accent);border-radius:2px;align-self:stretch;min-height:28px;flex-shrink:0;"></div>'
+              + '<div style="flex:1;">'
+              +   '<div style="font-size:13px;color:var(--text);">' + sec.nombre + '</div>'
+              +   '<div style="font-size:11px;color:var(--text3);">' + sec.alto + 'mm · ' + pct + '% del alto</div>'
+              + '</div>'
+              + '<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:' + (sec.tipo_vidrio==='dvh'?'#00E5A022':'#0ea5e922') + ';color:' + (sec.tipo_vidrio==='dvh'?'var(--accent)':'#0ea5e9') + ';">' + (sec.tipo_vidrio==='dvh'?'DVH':'V.Comun') + '</span>'
+              + '<button onclick="_eliminarSeccion(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:14px;">x</button>'
+              + '</div>';
+          }).join('')
+        + '</div>';
+    }
   }
 
-  // Update SVG
   const svgWrap = document.getElementById('mod_svg_wrap');
   if (svgWrap) {
-    svgWrap.innerHTML = secciones.length ? svgModulo(secciones, alto, 300, 120) : '';
+    if (!secciones.length) {
+      svgWrap.innerHTML = '';
+    } else if (esH) {
+      svgWrap.innerHTML = svgModulo(secciones.map(s => ({...s, alto})), alto, 300, 120);
+    } else {
+      svgWrap.innerHTML = svgModuloV(secciones.map(s => ({...s, ancho})), ancho, 120, 200);
+    }
   }
 
-  // Update ancho total label
-  const esH2 = (window._moduloOrient || 'h') === 'h';
-  const anchoTotal = esH2 ? secciones.reduce((s, sec) => s + Number(sec.ancho||0), 0) : (window._moduloAncho||1000);
-  const altoTotal  = !esH2 ? secciones.reduce((s, sec) => s + Number(sec.alto||0), 0) : (window._moduloAlto||1000);
+  const esH2 = esH;
+  const anchoTotal = esH2 ? secciones.reduce((s, sec) => s + Number(sec.ancho||0), 0) : ancho;
+  const altoTotal  = !esH2 ? secciones.reduce((s, sec) => s + Number(sec.alto||0), 0) : alto;
   const totalLabel = document.getElementById('mod_ancho_total');
   if (totalLabel) totalLabel.textContent = esH2
     ? 'Secciones · Ancho total: ' + anchoTotal + 'mm'
     : 'Secciones · Alto total: ' + altoTotal + 'mm';
 
-  // Enable/disable Agregar modulo button
   const btn = document.getElementById('btnAgregarModulo');
   if (btn) { btn.disabled = secciones.length < 2; btn.style.opacity = secciones.length < 2 ? '0.5' : '1'; }
 
-  // Clear ancho input for next section
   const anchoInput = document.getElementById('mod_sec_ancho');
   if (anchoInput) anchoInput.value = '';
 }
