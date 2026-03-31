@@ -644,13 +644,35 @@ function calcularModulo(a, perfilesDB, herrajesDB) {
     const tipoMetaM = state.tipologias_custom.find(t => t.id === sec.tipologia_id);
     const hojasM = Number(sec.hojas) || Number(tipoMetaM?.hojas_default) || 1;
     const params = { ...(tryParse(a.params, {})), tipo_vidrio: sec.tipo_vidrio || 'vcomon', hojas: hojasM };
-    const cortes = getCortesRaw(a.linea_id, sec.tipologia_id, Number(sec.ancho), alto, params, perfilesDB);
+    const altoSecM = Number(sec.alto) || alto;
+    const cortes = getCortesRaw(a.linea_id, sec.tipologia_id, Number(sec.ancho), altoSecM, params, perfilesDB);
     for (const c of cortes) {
       if (!c.perfil) continue;
-      allCortes.push({ ...c, cantidad: c.cantidad * cant, desc: '[' + sec.nombre + '] ' + (c.desc || '') });
+      // No multiplicar por cant aqui — el bin packing (paso 1) ya lo hace con c.cantidad * cant
+      allCortes.push({ ...c, desc: '[' + sec.nombre + '] ' + (c.desc || '') });
     }
   }
   return allCortes;
+}
+
+function calcularHerrajesModulo(a, herrajesDB) {
+  let secciones = a.secciones;
+  if (!Array.isArray(secciones)) secciones = tryParse(secciones, []);
+  if (!Array.isArray(secciones)) secciones = [];
+  const cant = Number(a.cantidad) || 1;
+  let total = 0;
+  for (const sec of secciones) {
+    const tipoMeta = state.tipologias_custom.find(t => t.id === sec.tipologia_id);
+    const hojas = Number(sec.hojas) || Number(tipoMeta?.hojas_default) || 1;
+    const params = { tipo_vidrio: sec.tipo_vidrio || 'vcomon', hojas };
+    const herrajesCalc = getHerrajesTipo(a.linea_id, sec.tipologia_id, params);
+    const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
+    for (const h of herrajesCalc) {
+      const hObj = herrajesFiltrados.find(x => x.id === h.id);
+      total += (hObj ? Number(hObj.precio) : 0) * h.cantidad * cant;
+    }
+  }
+  return total;
 }
 
 function calcularVidriosModulo(a) {
@@ -673,12 +695,19 @@ function calcularVidriosModulo(a) {
       continue;
     }
     const v = cfg.vidrio;
-    const fA = tv === 'dvh' ? (v.formula_ancho_dvh || v.formula_ancho_vcomon || '') : (v.formula_ancho_vcomon || '');
-    const fH = tv === 'dvh' ? (v.formula_alto_dvh  || v.formula_alto_vcomon  || '') : (v.formula_alto_vcomon  || '');
+    const fA = tv === 'dvh'
+      ? (v.formula_ancho_dvh || v.formula_ancho_vcomon || v.formula_ancho || '')
+      : (v.formula_ancho_vcomon || v.formula_ancho || '');
+    const fH = tv === 'dvh'
+      ? (v.formula_alto_dvh  || v.formula_alto_vcomon  || v.formula_alto  || '')
+      : (v.formula_alto_vcomon  || v.formula_alto  || '');
     if (!fA || !fH) continue;
-    const vA = evalFormula(fA, Number(sec.ancho), alto, N);
-    const vH = evalFormula(fH, Number(sec.ancho), alto, N);
-    const precioVid = tv === 'dvh' ? (Number(v.precio_dvh) || 15000) : (Number(v.precio_vcomon) || 8500);
+    const altoSec = Number(sec.alto) || alto;
+    const vA = evalFormula(fA, Number(sec.ancho), altoSec, N);
+    const vH = evalFormula(fH, Number(sec.ancho), altoSec, N);
+    const precioVid = tv === 'dvh'
+      ? (Number(v.precio_dvh) || 15000)
+      : (Number(v.precio_vcomon) || Number(v.precio) || 8500);
     for (let i = 0; i < N; i++) {
       vidrios.push({ ancho: vA, alto: vH, desc: sec.nombre + ' hoja ' + (i+1) + (tv==='dvh'?' (DVH)':''), precioVid, cant });
     }
@@ -869,6 +898,8 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
       // Modulo: calcular vidrios por seccion con su precio individual
       const vids = calcularVidriosModulo(a);
       costos[a.id].vidrios = vids.reduce((s, v) => s + (v.ancho/1000)*(v.alto/1000)*v.precioVid*v.cant, 0);
+      // Herrajes del modulo: sumar herrajes de cada seccion
+      costos[a.id].herrajes = calcularHerrajesModulo(a, herrajesDB);
     } else {
       if (!vidriosArr.length) {
         const params_a = tryParse(a.params, {});
@@ -3316,6 +3347,8 @@ function _renderModalModulo() {
     + '<div class="form-row" style="gap:8px;margin-top:8px;">'
     + '<div class="form-group" style="flex:1;min-width:90px;"><label>Ancho (mm)</label>'
     + '<input type="number" id="mod_sec_ancho" value="' + (window._moduloSecAncho||'') + '" placeholder="800" style="font-family:monospace;"></div>'
+    + '<div class="form-group" style="flex:1;min-width:90px;"><label>Alto (mm)</label>'
+    + '<input type="number" id="mod_sec_alto" placeholder="Global" style="font-family:monospace;" title="Dejar vacio para usar el alto global"></div>'
     + '<div class="form-group" style="flex:1;min-width:90px;"><label>Tipo vidrio</label>'
     + '<select id="mod_sec_tv">'
     + '<option value="vcomon"' + (!window._moduloSecTv||window._moduloSecTv==='vcomon'?' selected':'') + '>V. Comun</option>'
@@ -3354,7 +3387,8 @@ function _agregarSeccion() {
   const tipos = getTiposLinea(state.lineas[0]?.id || 'modena');
   const tipo = tipos.find(t => t.id === tipoId);
   if (!window._moduloSecciones) window._moduloSecciones = [];
-  window._moduloSecciones.push({ tipologia_id: tipoId, nombre: tipo?.nombre || tipoId, ancho, tipo_vidrio: tv });
+  const altoSec = Number(document.getElementById('mod_sec_alto')?.value) || 0; // 0 = usa alto global
+  window._moduloSecciones.push({ tipologia_id: tipoId, nombre: tipo?.nombre || tipoId, ancho, alto: altoSec || undefined, tipo_vidrio: tv });
   // Save state
   window._moduloSecTipo = tipoId;  // keep same tipologia selected for next add
   window._moduloSecTv = tv;
@@ -3377,7 +3411,7 @@ function _actualizarSeccionesUI() {
       ? secciones.map((sec, i) =>
           '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:8px;margin-bottom:6px;">'
           + '<div style="flex:1;font-size:13px;color:var(--text);">' + sec.nombre + '</div>'
-          + '<div style="font-size:12px;color:var(--text3);">' + sec.ancho + 'mm</div>'
+          + '<div style="font-size:12px;color:var(--text3);">' + sec.ancho + 'x' + (sec.alto ? sec.alto : alto) + 'mm</div>'
           + '<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:' + (sec.tipo_vidrio==='dvh'?'#00E5A022':'#0ea5e922') + ';color:' + (sec.tipo_vidrio==='dvh'?'var(--accent)':'#0ea5e9') + ';">' + (sec.tipo_vidrio==='dvh'?'DVH':'V.Comun') + '</span>'
           + '<button onclick="_eliminarSeccion(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:14px;">x</button>'
           + '</div>'
