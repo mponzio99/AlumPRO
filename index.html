@@ -3148,6 +3148,14 @@ function showModal(html) {
   document.body.appendChild(ov);
 }
 function closeModal() { document.querySelectorAll('#modalOverlay').forEach(el => el.remove()); }
+function updateModal(content) {
+  const existing = document.getElementById('modalOverlay');
+  if (existing) {
+    existing.querySelector('.modal').innerHTML = content;
+  } else {
+    showModal(content);
+  }
+}
 
 function showModalNuevoPresupuesto() {
   const lineaOpts = state.lineas.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
@@ -3387,14 +3395,14 @@ function _renderModalModulo() {
     ? 'Secciones · Ancho total: ' + anchoTotal + 'mm'
     : 'Secciones · Alto total: ' + altoTotal + 'mm';
 
-  showModal(
+  updateModal(
     '<div class="modal-title">Modulo Compuesto</div>'
     // Orientacion selector
     + '<div style="display:flex;gap:8px;margin-bottom:14px;">'
-    +   '<button id="mod_btn_h" onclick="window._moduloOrient=\'h\';window._moduloSecciones=[];_renderModalModulo()" '
+    +   '<button id="mod_btn_h" onclick="window._moduloOrient=\'h\';_renderModalModulo()" '
     +     'style="flex:1;padding:8px;border-radius:8px;border:2px solid ' + (esH ? 'var(--accent)' : 'var(--border)') + ';background:' + (esH ? 'var(--accent)11' : 'transparent') + ';color:' + (esH ? 'var(--accent)' : 'var(--text3)') + ';cursor:pointer;font-size:13px;font-weight:600;">'
     +     '⬌ Horizontal</button>'
-    +   '<button id="mod_btn_v" onclick="window._moduloOrient=\'v\';window._moduloSecciones=[];_renderModalModulo()" '
+    +   '<button id="mod_btn_v" onclick="window._moduloOrient=\'v\';_renderModalModulo()" '
     +     'style="flex:1;padding:8px;border-radius:8px;border:2px solid ' + (!esH ? 'var(--accent)' : 'var(--border)') + ';background:' + (!esH ? 'var(--accent)11' : 'transparent') + ';color:' + (!esH ? 'var(--accent)' : 'var(--text3)') + ';cursor:pointer;font-size:13px;font-weight:600;">'
     +     '⬍ Vertical</button>'
     + '</div>'
@@ -3444,17 +3452,20 @@ function _agregarSeccion() {
   const tipoId = sel ? sel.options[sel.selectedIndex]?.value : '';
   const tv     = document.getElementById('mod_sec_tv')?.value || 'vcomon';
   const esH    = (window._moduloOrient || 'h') === 'h';
-  const ancho  = esH ? Number(document.getElementById('mod_sec_ancho')?.value) : (window._moduloAncho || 1000);
-  const altoV  = !esH ? Number(document.getElementById('mod_sec_alto')?.value) : 0;
-  if (!tipoId || (esH && !ancho) || (!esH && !altoV)) { toast('Completa tipologia y ' + (esH ? 'ancho' : 'alto'), 'error'); return; }
+  const dimInput = document.getElementById(esH ? 'mod_sec_ancho' : 'mod_sec_alto');
+  const dimVal = Number(dimInput?.value) || 0;
+  const ancho  = esH ? dimVal : (window._moduloAncho || Number(document.getElementById('mod_ancho_fijo')?.value) || 1000);
+  const altoV  = !esH ? dimVal : 0;
+  if (!tipoId || !dimVal) { toast('Completa tipologia y ' + (esH ? 'ancho' : 'alto'), 'error'); return; }
   const tipos = getTiposLinea(state.lineas[0]?.id || 'modena');
   const tipo = tipos.find(t => t.id === tipoId);
   if (!window._moduloSecciones) window._moduloSecciones = [];
   const altoSec = !esH ? altoV : 0;
   window._moduloSecciones.push({ tipologia_id: tipoId, nombre: tipo?.nombre || tipoId, ancho, alto: altoSec || undefined, tipo_vidrio: tv });
   // Save state
-  window._moduloSecTipo = tipoId;  // keep same tipologia selected for next add
+  window._moduloSecTipo = tipoId;
   window._moduloSecTv = tv;
+  if (esH) window._moduloSecAncho = ''; else window._moduloSecAlto = '';
   window._moduloAlto = Number(document.getElementById('mod_alto')?.value) || 1000;
   window._moduloCant = Number(document.getElementById('mod_cant')?.value) || 1;
   // Clear ancho for next section, keep tipo and tv
