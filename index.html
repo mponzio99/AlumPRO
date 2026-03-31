@@ -668,7 +668,9 @@ function calcularHerrajesModulo(a, herrajesDB) {
     const herrajesCalc = getHerrajesTipo(a.linea_id, sec.tipologia_id, params);
     const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
     for (const h of herrajesCalc) {
-      const hObj = herrajesFiltrados.find(x => x.id === h.id);
+      // Buscar por id primero, luego por nombre como fallback (ids pueden diferir entre defaults y Sheet)
+      const hObj = herrajesFiltrados.find(x => x.id === h.id)
+        || herrajesFiltrados.find(x => x.nombre === h.descripcion || x.nombre === (h.desc||''));
       total += (hObj ? Number(hObj.precio) : 0) * h.cantidad * cant;
     }
   }
@@ -920,7 +922,9 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
       costos[a.id].vidrios = vidriosArr.reduce((s, v) =>
         s + (v.ancho/1000)*(v.alto/1000)*Number(a.precio_vidrio||8500), 0) * cant;
     }
-    costos[a.id].herrajes = (herrajesDetalleMap[a.id] || []).reduce((s, h) => s + h.subtotal, 0);
+    if (!a.es_modulo) {
+      costos[a.id].herrajes = (herrajesDetalleMap[a.id] || []).reduce((s, h) => s + h.subtotal, 0);
+    }
   }
 
   return costos;
