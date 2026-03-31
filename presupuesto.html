@@ -170,10 +170,15 @@ async function init() {
 
   try {
     // Fetch all needed data in parallel
+    const fetchSheet = name =>
+      fetch(SCRIPT_URL + '?action=get&sheet=' + encodeURIComponent(name))
+        .then(r => r.json())
+        .then(j => j.ok ? j.data : []);
+
     const [presupuestos, aberturas, config] = await Promise.all([
-      fetch(SCRIPT_URL + '?action=get&sheet=Presupuestos').then(r=>r.json()),
-      fetch(SCRIPT_URL + '?action=get&sheet=Aberturas').then(r=>r.json()),
-      fetch(SCRIPT_URL + '?action=get&sheet=Config').then(r=>r.json()),
+      fetchSheet('Presupuestos'),
+      fetchSheet('Aberturas'),
+      fetchSheet('Config'),
     ]);
 
     const p = presupuestos.find(x => x.id === presupuestoId);
