@@ -615,7 +615,7 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
 
   const costoPerfiles = optimizacion.reduce((s, o) => s + o.costo, 0);
   const costoVidrios = vidrios.reduce((s, v) => s + (v.ancho / 1000) * (v.alto / 1000) * precioVidrio, 0);
-  const herrajesCalc = getHerrajesTipo(linea_id, tipo_id, params);
+  const herrajesCalc = getHerrajesTipo(linea_id, tipo_id, { ...params, ancho: W, alto: H });
   const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === linea_id);
   const costoHerrajes = herrajesCalc.reduce((s, h) => {
     const hObj = herrajesFiltrados.find(x => x.id === h.id);
@@ -664,7 +664,7 @@ function calcularHerrajesModulo(a, herrajesDB) {
   for (const sec of secciones) {
     const tipoMeta = state.tipologias_custom.find(t => t.id === sec.tipologia_id);
     const hojas = Number(sec.hojas) || Number(tipoMeta?.hojas_default) || 1;
-    const params = { tipo_vidrio: sec.tipo_vidrio || 'vcomon', hojas };
+    const params = { tipo_vidrio: sec.tipo_vidrio || 'vcomon', hojas, ancho: Number(sec.ancho||0), alto: Number(sec.alto||a.alto||0) };
     const herrajesCalc = getHerrajesTipo(a.linea_id, sec.tipologia_id, params);
     const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
     for (const h of herrajesCalc) {
@@ -764,7 +764,7 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
         desc: h.nombre,
       }));
     } else {
-      const herrajesCalc = getHerrajesTipo(a.linea_id, a.tipo_id, params);
+      const herrajesCalc = getHerrajesTipo(a.linea_id, a.tipo_id, { ...params, ancho: Number(a.ancho||0), alto: Number(a.alto||0) });
       const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === a.linea_id);
       herrajesDetalleArr = herrajesCalc.map(h => {
         const hObj = herrajesFiltrados.find(x => x.id === h.id);
@@ -1041,12 +1041,19 @@ function getConfigTipo(linea_id, tipo_id) {
 function getHerrajesTipo(linea_id, tipo_id, params) {
   const cfg = getConfigTipo(linea_id, tipo_id);
   const N = Number(params?.hojas) || 1;
+  const W = Number(params?.ancho) || 0;
+  const H = Number(params?.alto) || 0;
   if (cfg && cfg.herrajes && cfg.herrajes.length > 0) {
     return cfg.herrajes
       .filter(h => !h.solo_si_n || String(h.solo_si_n) === String(N))
       .map(h => {
         let cantNum = 1;
-        try { cantNum = Math.round(Function('N', 'return ' + h.cantidad)(N)); } catch {}
+        const cantStr = String(h.cantidad || '1');
+        try {
+          const raw = Function('N','W','H', 'return ' + cantStr)(N, W, H);
+          // Si la formula contiene W o H es continua (metros), no redondear
+          cantNum = /[WH]/.test(cantStr) ? Number(raw) : Math.round(Number(raw));
+        } catch { cantNum = parseFloat(cantStr) || 1; }
         return { id: h.id, cantidad: cantNum, descripcion: h.descripcion, desc: h.descripcion };
       });
   }
@@ -1951,7 +1958,7 @@ function renderConfig() {
     return `<tr style="${h.solo_si_n ? 'background:'+condBg+';' : ''}">
       <td><select style="width:100%;font-size:13px;" onchange="updateConfigHerraje('${lineaActiva}','${tipoActivo}',${idx},'id',this.value)">${selectOpts}</select></td>
       <td style="font-size:12px;color:var(--text3);">${h.descripcion||''}</td>
-      <td><input value="${h.cantidad}" style="width:80px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigHerraje('${lineaActiva}','${tipoActivo}',${idx},'cantidad',this.value)"></td>
+      <td><input value="${h.cantidad}" placeholder="ej: N*2" title="Variables: N=hojas W=ancho(mm) H=alto(mm). Ej metro perimetro: (2*W+2*H)/1000" style="width:120px;font-family:'DM Mono',monospace;font-size:13px;" onchange="updateConfigHerraje('${lineaActiva}','${tipoActivo}',${idx},'cantidad',this.value)"></td>
       <td><select style="width:70px;font-size:12px;" onchange="updateConfigHerraje('${lineaActiva}','${tipoActivo}',${idx},'solo_si_n',this.value)">
         <option value="" ${!h.solo_si_n?'selected':''}>Siempre</option>
         <option value="1" ${h.solo_si_n==='1'?'selected':''}>N = 1</option>
@@ -1967,6 +1974,7 @@ function renderConfig() {
       <thead><tr><th>Herraje</th><th>Descripcion</th><th>Cantidad</th><th>Solo si N=</th><th></th></tr></thead>
       <tbody>${herrajesConfigRows2 || '<tr><td colspan="5" style="color:var(--text3);padding:12px;">Sin herrajes configurados</td></tr>'}</tbody>
     </table></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6;">Variables en cantidad: <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">N</code> hojas &middot; <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">W</code> ancho mm &middot; <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">H</code> alto mm &nbsp;&mdash;&nbsp; Ej. metro perímetro vano: <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">(2*W+2*H)/1000</code> &nbsp;&mdash;&nbsp; Ej. metro por hoja: <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">(2*(W/N)+2*H)/1000</code></div>
     <button class="btn-secondary" style="margin-top:10px;" onclick="agregarConfigHerraje('${lineaActiva}','${tipoActivo}')">+ Agregar herraje</button>`;
 
   return `
@@ -2913,7 +2921,8 @@ function _getHerrajesSnapAb(a) {
   const parsed = tryParse(a.herrajes_snap, null);
   if (Array.isArray(parsed) && parsed.length > 0) return parsed;
   // Fallback: construir desde tipo (abertura sin snap todavia)
-  return getHerrajesTipo(a.linea_id, a.tipo_id, tryParse(a.params, {})).map(h => {
+  const _prms = tryParse(a.params, {});
+  return getHerrajesTipo(a.linea_id, a.tipo_id, { ..._prms, ancho: Number(a.ancho||0), alto: Number(a.alto||0) }).map(h => {
     const hObj = state.herrajes.find(x => x.id === h.id);
     return { id: h.id, nombre: hObj?.nombre || h.descripcion || h.id, cantidad: h.cantidad, precio: Number(hObj?.precio || 0), unidad: hObj?.unidad || 'u' };
   });
@@ -3245,7 +3254,7 @@ async function crearPresupuesto() {
   if (!cliente || !obra) { toast('Completá cliente y obra', 'error'); return; }
   setBtnLoading(btn, true, 'Creando...');
   try {
-    const p = { id: genId(), cliente, obra, fecha, estado: 'generado', markup: 30, total_final: 0, kanban_col: '', linea_id, linea: linea?.nombre || linea_id, tipo_al, color_al, precio_kg };
+    const p = { id: genId(), cliente, obra, fecha, estado: 'generado', markup: 60, total_final: 0, kanban_col: '', linea_id, linea: linea?.nombre || linea_id, tipo_al, color_al, precio_kg };
     state.presupuestos.unshift(p);
     await sheetsAppend(SHEETS.presupuestos, p);
     closeModal();
@@ -3651,7 +3660,7 @@ function showAddAbertura() {
       </div>
       <div class="form-group">
         <label>Tipo</label>
-        <select id="m_tipo" onchange="updateParams()"></select>
+        <select id="m_tipo" onchange="document.getElementById('m_pvid').dataset.userModified='';updateParams()"></select>
       </div>
     </div>
     <div class="form-row">
@@ -3671,7 +3680,7 @@ function showAddAbertura() {
         </label>
       </div>
     </div>
-    <div class="form-group"><label>Precio vidrio ($/m²)</label><input type="number" id="m_pvid" value="8500" oninput="previewCalc()"></div>
+    <div class="form-group"><label>Precio vidrio ($/m²)</label><input type="number" id="m_pvid" value="8500" oninput="this.dataset.userModified='1';previewCalc()"></div>
     <div id="m_preview"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -3730,8 +3739,13 @@ function previewCalc() {
   const _pVidConfig = _cfgPv?.vidrio
     ? (tv === 'dvh' ? (_cfgPv.vidrio.precio_dvh || _cfgPv.vidrio.precio_vcomon) : _cfgPv.vidrio.precio_vcomon)
     : null;
-  const pVid = _pVidConfig ? Number(_pVidConfig) : (parseFloat(document.getElementById('m_pvid')?.value) || 8500);
-  if (_pVidConfig && document.getElementById('m_pvid')) document.getElementById('m_pvid').value = pVid;
+  const pVidInput = document.getElementById('m_pvid');
+  // Solo usar precio de config si el usuario no modificó el campo manualmente
+  const pVidUserModified = pVidInput?.dataset.userModified === '1';
+  const pVid = pVidUserModified
+    ? (parseFloat(pVidInput.value) || 8500)
+    : (_pVidConfig ? Number(_pVidConfig) : (parseFloat(pVidInput?.value) || 8500));
+  if (!pVidUserModified && _pVidConfig && pVidInput) pVidInput.value = pVid;
   const preview = document.getElementById('m_preview');
   const btnAb   = document.getElementById('btnAgregarAb');
   if (!preview) return;
@@ -3858,7 +3872,7 @@ async function confirmarAgregarAbertura() {
       .map(pf => ({ id: pf.id, linea_id: pf.linea_id, codigo: pf.codigo, nombre: pf.nombre, peso_tira: pf.peso_tira, largo_barra: pf.largo_barra }));
 
     // Snapshot de herrajes al momento de carga (congela precio)
-    const herrajesCalcSnap = getHerrajesTipo(linea_id, tipoId, params);
+    const herrajesCalcSnap = getHerrajesTipo(linea_id, tipoId, { ...params, ancho: W, alto: H });
     const herrajesSnap = herrajesCalcSnap.map(h => {
       const hObj = state.herrajes.find(x => x.id === h.id);
       return { id: h.id, nombre: hObj?.nombre || h.descripcion || h.id, cantidad: h.cantidad, precio: Number(hObj?.precio || 0), unidad: hObj?.unidad || 'u' };
