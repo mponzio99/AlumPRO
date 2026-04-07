@@ -811,31 +811,22 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   }
 
   if (criterio === 'barra_completa') {
-    for (const a of abs) {
-      const cant = Number(a.cantidad) || 1;
-      const perfilesFiltrados = perfilesDB.filter(pf => pf.linea_id === a.linea_id);
-      const params = tryParse(a.params, {});
-      const cortesRaw = a.es_modulo
-        ? calcularModulo(a, perfilesDB, [])
-        : getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, perfilesDB);
-      const perfilesUsados = [...new Set(cortesRaw.filter(c => c.perfil).map(c => c.perfil.codigo || c.perfil.id))];
-      for (const k of perfilesUsados) {
-        const perfil = perfilesFiltrados.find(p => p.codigo === k || p.id === k);
-        if (!perfil) continue;
-        const largoBarra = Number(perfil.largo_barra || 6000);
-        const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
-        // Multiplicar piezas por cantidad de aberturas
-        const piezas = cortesRaw
-          .filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k))
-          .flatMap(c => Array(c.cantidad * cant).fill(c.largo))
-          .sort((a, b) => b - a);
-        let barrasN = 0, resto = 0;
-        for (const mm of piezas) {
-          if (resto >= mm) { resto -= mm; } else { barrasN++; resto = largoBarra - mm; }
-        }
-        const costo = barrasN * costoPorBarra;
-        costos[a.id].perfiles += costo;
-        costos[a.id].perfilesPorCodigo[k] = (costos[a.id].perfilesPorCodigo[k] || 0) + costo;
+    // Usar el mismo bin packing consolidado que proporcional.
+    // La diferencia: cada abertura paga la barra completa por cada barra que usa,
+    // distribuida según fracción de mm (no según sobrante).
+    for (const [k, barras] of Object.entries(barrasAcum)) {
+      const perfil = perfilesDB.find(p => p.codigo === k || p.id === k);
+      if (!perfil) continue;
+      const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
+      const mmTotalK = Object.values(mmPorAb).reduce((s, m) => s + (m[k] || 0), 0);
+      // Cada barra se cobra completa, repartida por fracción de uso
+      for (const a of abs) {
+        const mmEsta = mmPorAb[a.id]?.[k] || 0;
+        if (mmEsta === 0) continue;
+        const fraccionAb = mmTotalK > 0 ? mmEsta / mmTotalK : 0;
+        const costoEste = costoPorBarra * barras.length * fraccionAb;
+        costos[a.id].perfiles += costoEste;
+        costos[a.id].perfilesPorCodigo[k] = (costos[a.id].perfilesPorCodigo[k] || 0) + costoEste;
       }
     }
 
