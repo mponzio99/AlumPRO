@@ -811,20 +811,19 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
   }
 
   if (criterio === 'barra_completa') {
-    // Usar el mismo bin packing consolidado que proporcional.
-    // La diferencia: cada abertura paga la barra completa por cada barra que usa,
-    // distribuida según fracción de mm (no según sobrante).
+    // Mismo bin packing consolidado. Costo total = N barras × costo/barra.
+    // Se distribuye entre aberturas por fracción de mm usado.
     for (const [k, barras] of Object.entries(barrasAcum)) {
       const perfil = perfilesDB.find(p => p.codigo === k || p.id === k);
       if (!perfil) continue;
       const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
+      const costoTotalK = costoPorBarra * barras.length; // total exacto: N barras completas
       const mmTotalK = Object.values(mmPorAb).reduce((s, m) => s + (m[k] || 0), 0);
-      // Cada barra se cobra completa, repartida por fracción de uso
       for (const a of abs) {
         const mmEsta = mmPorAb[a.id]?.[k] || 0;
         if (mmEsta === 0) continue;
         const fraccionAb = mmTotalK > 0 ? mmEsta / mmTotalK : 0;
-        const costoEste = costoPorBarra * barras.length * fraccionAb;
+        const costoEste = costoTotalK * fraccionAb;
         costos[a.id].perfiles += costoEste;
         costos[a.id].perfilesPorCodigo[k] = (costos[a.id].perfilesPorCodigo[k] || 0) + costoEste;
       }
