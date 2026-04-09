@@ -442,12 +442,11 @@ function getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB) {
   // Si hay config (custom o editada), siempre usarla
   if (cfg && cfg.perfiles && cfg.perfiles.length > 0) {
     const tipoVidrio = params?.tipo_vidrio || 'vcomon'; // 'vcomon' o 'dvh'
-    return cfg.perfiles
+    const _cortesBase = cfg.perfiles
       .filter(pf => !pf.solo_si_n || String(pf.solo_si_n) === String(N))
       .filter(pf => {
-        // Filtrar por tipo de vidrio: si no tiene condicion, siempre incluir
         if (!pf.tipo_vidrio || pf.tipo_vidrio === 'siempre') return true;
-        return pf.tipo_vidrio === tipoVidrio;
+        return pf.tipo_vidrio === (params?.tipo_vidrio || 'vcomon');
       })
       .map(pf => {
         const perfil = perfilesFiltrados.find(p => p.codigo === pf.codigo || p.id === pf.codigo);
@@ -457,6 +456,20 @@ function getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB) {
         const largoNum = evalFormula(pf.formula_largo, W, H, N);
         return { perfil, cantidad: cantNum, largo: largoNum, desc: pf.rol };
       }).filter(Boolean);
+  // Tablillas: agregar perfiles horizontales si la tipologia lo soporta y el usuario puso pct > 0
+  const _pctTab = Number(params?.pct_tablillas) || 0;
+  if (_pctTab > 0 && cfg.tablillas?.enabled && cfg.tablillas?.perfil_codigo) {
+    const _tabPerfil = perfilesFiltrados.find(p =>
+      p.codigo === cfg.tablillas.perfil_codigo || p.id === cfg.tablillas.perfil_codigo);
+    if (_tabPerfil) {
+      const _altoTab = Number(cfg.tablillas.alto_tablilla) || 80;
+      const _altoZona = Math.round(H * _pctTab / 100);
+      const _nTab = Math.max(1, Math.floor(_altoZona / _altoTab));
+      const _anchoHoja = Math.round(W / (Number(params?.hojas) || 1));
+      _cortesBase.push({ perfil: _tabPerfil, cantidad: _nTab, largo: _anchoHoja, desc: 'Tablilla' });
+    }
+  }
+  return _cortesBase;
   }
   // Fallback: función hardcodeada (solo tipos built-in)
   const tipos = TIPOS_ABERTURA[linea_id];
@@ -903,8 +916,11 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
           const fH = tv==='dvh' ? (v.formula_alto_dvh||v.formula_alto_vcomon||v.formula_alto||'') : (v.formula_alto_vcomon||v.formula_alto||'');
           const N_a = Number(params_a.hojas) || 1;
           if (fA && fH) {
-            const vA = evalFormula(fA, Number(a.ancho), Number(a.alto), N_a);
-            const vH = evalFormula(fH, Number(a.ancho), Number(a.alto), N_a);
+            // If tablillas active, vidrio zone is reduced
+            const _pctTabA = Number(params_a.pct_tablillas) || 0;
+            const _HvidA = _pctTabA > 0 ? Math.round(Number(a.alto) * (1 - _pctTabA/100)) : Number(a.alto);
+            const vA = evalFormula(fA, Number(a.ancho), _HvidA, N_a);
+            const vH = evalFormula(fH, Number(a.ancho), _HvidA, N_a);
             vidriosArr = Array.from({length: N_a}, (_,i) => ({ ancho: vA, alto: vH, desc: 'Vidrio hoja '+(i+1) }));
           }
         }
@@ -1969,6 +1985,27 @@ function renderConfig() {
       </div>
       ${cfg.gif_url ? '<div style="margin-top:8px;"><img src="'+cfg.gif_url+'" style="height:80px;border-radius:6px;border:1px solid var(--border);" onerror="this.style.display=&quot;none&quot;"></div>' : ''}
     </div>
+    <div style="margin-top:12px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <input type="checkbox" id="cfg_tab_enabled" ${cfg.tablillas?.enabled?'checked':''} onchange="updateConfigTablillas('${lineaActiva}','${tipoActivo}','enabled',this.checked)">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;">Soporta tablillas</div>
+      </div>
+      ${cfg.tablillas?.enabled ? `
+      <div class="form-row" style="gap:12px;margin-top:8px;">
+        <div class="form-group" style="flex:2;margin-bottom:0;">
+          <label>Perfil de tablilla</label>
+          <select onchange="updateConfigTablillas('${lineaActiva}','${tipoActivo}','perfil_codigo',this.value)">
+            <option value="">-- Seleccionar perfil --</option>
+            ${state.perfiles.filter(p=>p.linea_id===lineaActiva).map(p=>'<option value="'+p.codigo+'"'+(cfg.tablillas.perfil_codigo===p.codigo?' selected':'')+'>['+(p.codigo||'')+'] '+p.nombre+'</option>').join('')}
+          </select>
+        </div>
+        <div class="form-group" style="flex:1;margin-bottom:0;">
+          <label>Alto tablilla (mm)</label>
+          <input type="number" value="${cfg.tablillas.alto_tablilla||80}" style="font-family:'DM Mono',monospace;" onchange="updateConfigTablillas('${lineaActiva}','${tipoActivo}','alto_tablilla',Number(this.value))">
+        </div>
+      </div>
+      ` : ''}
+    </div>
     `;
   })() : '';
 
@@ -2177,6 +2214,15 @@ function updateConfigVidrio(linea_id, tipo_id, campo, valor) {
   cfg.vidrio[campo] = valor;
   saveConfigTipo(linea_id, tipo_id);
   toast('Guardado');
+}
+
+function updateConfigTablillas(linea_id, tipo_id, campo, valor) {
+  const cfg = _ensureConfigTipo(linea_id, tipo_id);
+  if (!cfg.tablillas) cfg.tablillas = { enabled: false, perfil_codigo: '', alto_tablilla: 80 };
+  cfg.tablillas[campo] = valor;
+  saveConfigTipo(linea_id, tipo_id);
+  toast('Guardado');
+  render(); // re-render to show/hide perfil selector
 }
 
 // Helper: renderiza una fila de config de perfil con dropdown
@@ -3708,6 +3754,27 @@ function showAddAbertura() {
       <div class="form-group"><label>Cantidad</label><input type="number" id="m_cant" value="1" min="1" oninput="previewCalc()"></div>
     </div>
     <div id="m_params"></div>
+    <div id="m_tablillas_wrap" style="display:none;">
+      <div class="form-group">
+        <label>% Tablillas</label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="number" id="m_pct_tablillas" value="0" min="0" max="100" style="width:80px;font-family:monospace;" oninput="previewCalc()">
+          <span style="font-size:12px;color:var(--text3);">%</span>
+          <span id="m_tablillas_info" style="font-size:11px;color:var(--text3);"></span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Posición tablillas</label>
+        <div style="display:flex;gap:12px;margin-top:4px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;text-transform:none;">
+            <input type="radio" name="m_tab_pos" value="abajo" checked onchange="previewCalc()"> Abajo
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;text-transform:none;">
+            <input type="radio" name="m_tab_pos" value="arriba" onchange="previewCalc()"> Arriba
+          </label>
+        </div>
+      </div>
+    </div>
     <div class="form-group">
       <label>Tipo de vidrio</label>
       <div style="display:flex;gap:8px;margin-top:4px;">
@@ -3749,6 +3816,10 @@ function updateParams() {
       <label>${p.nombre}</label>
       <input type="number" id="param_${p.id}" value="${p.default}" min="${p.min}" max="${p.max}" style="width:100px" oninput="previewCalc()">
     </div>`).join('');
+  // Show/hide tablillas section based on tipologia config
+  const cfgTipo = getConfigTipo(linea, tipoId);
+  const tabWrap = document.getElementById('m_tablillas_wrap');
+  if (tabWrap) tabWrap.style.display = cfgTipo?.tablillas?.enabled ? '' : 'none';
   updatePrecioVidrio();
   previewCalc();
 }
@@ -3789,6 +3860,22 @@ function previewCalc() {
   const btnAb   = document.getElementById('btnAgregarAb');
   if (!preview) return;
   if (!W || !H || !linea || !tipoId) { preview.innerHTML = ''; if (btnAb) btnAb.disabled = true; return; }
+  // Update tablillas info
+  const _cfgTabPrev = getConfigTipo(linea, tipoId);
+  if (_cfgTabPrev?.tablillas?.enabled) {
+    const _pctTabPrev = Number(document.getElementById('m_pct_tablillas')?.value) || 0;
+    const _infoEl = document.getElementById('m_tablillas_info');
+    if (_infoEl && _pctTabPrev > 0) {
+      const _hoja_h = H; // approximate
+      const _altoZonaTab = Math.round(_hoja_h * _pctTabPrev / 100);
+      const _altoZonaVid = _hoja_h - _altoZonaTab;
+      const _altoTab = Number(_cfgTabPrev.tablillas.alto_tablilla) || 80;
+      const _nTab = Math.max(1, Math.floor(_altoZonaTab / _altoTab));
+      _infoEl.textContent = '→ ' + _nTab + ' tablillas · vidrio ' + _altoZonaVid + 'mm alto';
+    } else if (_infoEl) {
+      _infoEl.textContent = '';
+    }
+  }
 
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
   const precioKg = getPrecioKgPresupuesto(p);
@@ -3897,6 +3984,16 @@ async function confirmarAgregarAbertura() {
 
     const tipoVidrio = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
     params.tipo_vidrio = tipoVidrio;
+
+    // Tablillas
+    const _cfgTabSnap = getConfigTipo(linea_id, tipoId);
+    if (_cfgTabSnap?.tablillas?.enabled) {
+      const _pctTab = Number(document.getElementById('m_pct_tablillas')?.value) || 0;
+      if (_pctTab > 0) {
+        params.pct_tablillas = _pctTab;
+        params.tab_pos = document.querySelector('input[name="m_tab_pos"]:checked')?.value || 'abajo';
+      }
+    }
 
     const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
     const barrasExistentes = getBarrasExistentes(absExistentes, state.perfiles);
