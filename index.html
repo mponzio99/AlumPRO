@@ -1100,6 +1100,12 @@ function estadoBadge(estadoId) {
 function navigate(vista, extra) {
   state.vista = vista;
   state.presupuestoActivo = extra || null;
+  // Restore criterio_precio from presupuesto
+  if (extra) {
+    const pNav = state.presupuestos.find(x => x.id === extra);
+    if (pNav?.criterio_precio) state._criterioPrecio = pNav.criterio_precio;
+    else state._criterioPrecio = 'proporcional';
+  }
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   const map = { presupuestos: 0, kanban: 1, stock: 2, config: 3 };
   const btns = document.querySelectorAll('.nav-btn');
@@ -1220,7 +1226,38 @@ function setUmbralSobrante(valor) {
 
 function setCriterioPrecio(valor) {
   state._criterioPrecio = valor;
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (p) {
+    p.criterio_precio = valor;
+    sheetsUpdateRow(SHEETS.presupuestos, p.id, { criterio_precio: valor }).catch(() => {});
+    // Recalculate and save abertura costs with new criterio
+    _guardarCostosConCriterio(p, valor).catch(() => {});
+  }
   render();
+}
+
+async function _guardarCostosConCriterio(p, criterio) {
+  const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
+  if (!abs.length) return;
+  const precioKg = getPrecioKgPresupuesto(p);
+  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+  // Update each abertura in state and Sheet
+  const updates = abs.map(a => {
+    const c = costos[a.id] || {};
+    a.costo_perfiles = c.perfiles || 0;
+    a.costo_vidrios  = c.vidrios  || 0;
+    a.costo_herrajes = c.herrajes || 0;
+    return sheetsUpdateRow(SHEETS.aberturas, a.id, {
+      costo_perfiles: a.costo_perfiles,
+      costo_vidrios:  a.costo_vidrios,
+      costo_herrajes: a.costo_herrajes,
+    }).catch(() => {});
+  });
+  await Promise.all(updates);
+  // Update presupuesto total
+  const sub = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
+  p.total_final = sub * (1 + Number(p.markup||0) / 100);
+  await sheetsUpdateRow(SHEETS.presupuestos, p.id, { total_final: p.total_final }).catch(() => {});
 }
 
 function setBtnLoading(btn, loading, textoOriginal) {
@@ -1422,7 +1459,11 @@ function renderDetalle() {
   if (tab === 'calculo') {
     const pres = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKg = getPrecioKgPresupuesto(pres);
-    const criterio = state._criterioPrecio || 'proporcional';
+    // Restore criterio from presupuesto if not set yet
+    if (pres?.criterio_precio && state._criterioPrecio !== pres.criterio_precio) {
+      state._criterioPrecio = pres.criterio_precio;
+    }
+    const criterio = state._criterioPrecio || pres?.criterio_precio || 'proporcional';
 
     // Recalcular bin packing consolidado para detalle de barras
     let barrasAcum = {};
@@ -3087,7 +3128,7 @@ async function recalcularTotal() {
   const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
   const precioKg = getPrecioKgPresupuesto(p);
   // Usar calcularCostoAberturas para tener en cuenta cantidad correctamente
-  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, 'proporcional', state.umbral_sobrante);
+  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'proporcional', state.umbral_sobrante);
   const sub = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
   const total = sub * (1 + Number(p.markup||0) / 100);
   p.total_final = total;
