@@ -600,8 +600,10 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
       ? (v.formula_alto_dvh || v.formula_alto_vcomon || v.formula_alto || '')
       : (v.formula_alto_vcomon || v.formula_alto || '');
     if (fAncho && fAlto) {
-      const vAncho = evalFormula(fAncho, W, H, N);
-      const vAlto  = evalFormula(fAlto,  W, H, N);
+      const _pctTabAb = Number(params?.pct_tablillas) || 0;
+      const _Hvid = _pctTabAb > 0 ? Math.round(H * (1 - _pctTabAb/100)) : H;
+      const vAncho = evalFormula(fAncho, W, _Hvid, N);
+      const vAlto  = evalFormula(fAlto,  W, _Hvid, N);
       vidrios = Array.from({ length: N }, (_, i) => ({ desc: 'Vidrio hoja ' + (i+1) + (tipoVid==='dvh'?' (DVH)':''), ancho: vAncho, alto: vAlto }));
     } else if (tipo && typeof tipo.vidrios === 'function') {
       vidrios = tipo.vidrios(W, H, params);
@@ -3890,7 +3892,10 @@ function previewCalc() {
   (tipo.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
 
   // Abertura simulada (id temporal)
-  const paramsPreview = { ...params, tipo_vidrio: tv };
+  const _pctTabPv = Number(document.getElementById('m_pct_tablillas')?.value) || 0;
+  const _tabPosPv = document.querySelector('input[name="m_tab_pos"]:checked')?.value || 'abajo';
+  const paramsPreview = { ...params, tipo_vidrio: tv,
+    ...(_pctTabPv > 0 ? { pct_tablillas: _pctTabPv, tab_pos: _tabPosPv } : {}) };
   const abSimulada = {
     id: '__preview__',
     presupuesto_id: state.presupuestoActivo,
@@ -3908,7 +3913,8 @@ function previewCalc() {
   const cNueva = costos['__preview__'] || { perfiles: 0, vidrios: 0, herrajes: 0 };
 
   // También calcular vidrios de la nueva abertura (con tipo_vidrio en params)
-  const paramsConTv = { ...params, tipo_vidrio: tv };
+  const paramsConTv = { ...params, tipo_vidrio: tv,
+    ...(_pctTabPv > 0 ? { pct_tablillas: _pctTabPv, tab_pos: _tabPosPv } : {}) };
   const resBase = calcularAbertura(linea, tipoId, W, H, paramsConTv, state.perfiles, state.herrajes, pVid, precioKg, {});
   const vidrios = resBase ? resBase.vidrios : [];
   const costoVidrios = vidrios.reduce((s, v) => s + (v.ancho/1000)*(v.alto/1000)*pVid, 0);
