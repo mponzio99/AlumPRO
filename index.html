@@ -525,7 +525,7 @@ function optimizarCortesConSobrantes(cortesAgrupados, perfilesDB, precioKg, exis
 
     barrasActuales[perfilId] = barras;
 
-    const pesoTira = Number(perfil.peso_tira) || 0;
+    const pesoTira = parseFloat(perfil.peso_tira) || 0; // parseFloat ignores date strings unlike Number()
     const costoPorBarra = pesoTira * precioKg;
     // Solo se cobran las barras NUEVAS que necesitó esta abertura
     const costoTotal = barrasNuevas.length * costoPorBarra;
@@ -628,7 +628,7 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
     agrupados, perfilesFiltrados, precioKg, barrasExistentes || {}
   );
 
-  const costoPerfiles = optimizacion.reduce((s, o) => s + o.costo, 0);
+  const costoPerfiles = optimizacion.reduce((s, o) => s + (isNaN(o.costo) ? 0 : o.costo), 0);
   const costoVidrios = vidrios.reduce((s, v) => s + (v.ancho / 1000) * (v.alto / 1000) * precioVidrio, 0);
   const herrajesCalc = getHerrajesTipo(linea_id, tipo_id, { ...params, ancho: W, alto: H });
   const herrajesFiltrados = herrajesDB.filter(h => h.linea_id === linea_id);
@@ -831,7 +831,7 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
     for (const [k, barras] of Object.entries(barrasAcum)) {
       const perfil = perfilesDB.find(p => p.codigo === k || p.id === k);
       if (!perfil) continue;
-      const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
+      const costoPorBarra = (parseFloat(perfil.peso_tira) || 0) * (parseFloat(precioKg) || 0);
       const costoTotalK = costoPorBarra * barras.length; // total exacto: N barras completas
       const mmTotalK = Object.values(mmPorAb).reduce((s, m) => s + (m[k] || 0), 0);
       for (const a of abs) {
@@ -850,7 +850,7 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
       const perfil = perfilesDB.find(p => p.codigo === k || p.id === k);
       if (!perfil) continue;
       const largoBarra = Number(perfil.largo_barra || 6000);
-      const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
+      const costoPorBarra = (parseFloat(perfil.peso_tira) || 0) * (parseFloat(precioKg) || 0);
       const precioPorMm = costoPorBarra / largoBarra;
 
       for (const barra of barras) {
@@ -1539,7 +1539,7 @@ function renderDetalle() {
       const nombre = perfil.nombre || k;
       const codigo = perfil.codigo || '';
       const largoBarra = Number(perfil.largo_barra || 6000);
-      const costoPorBarra = Number(perfil.peso_tira || 0) * precioKg;
+      const costoPorBarra = (parseFloat(perfil.peso_tira) || 0) * (parseFloat(precioKg) || 0);
       // Costo según criterio = suma de perfilesPorCodigo de todas las aberturas para este perfil
       let costoSegunCriterio = 0;
       for (const a of abs) {
@@ -4460,7 +4460,7 @@ function imprimirPresupuesto(id) {
         + '</div>'
       : svgContent;
     const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0 };
-    const precioUnitarioSinMarkup = c.perfiles + c.vidrios + c.herrajes;
+    const precioUnitarioSinMarkup = (isNaN(c.perfiles)?0:c.perfiles) + (isNaN(c.vidrios)?0:c.vidrios) + (isNaN(c.herrajes)?0:c.herrajes);
     const precioUnitario = precioUnitarioSinMarkup * (1 + markup / 100);
     const precioTotal = precioUnitario * Number(a.cantidad);
     const seccionesListPdf = a.es_modulo && a.secciones && a.secciones.length
