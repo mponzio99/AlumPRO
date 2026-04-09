@@ -1288,7 +1288,7 @@ function render() {
   else if (state.vista === 'presupuestos' && state.presupuestoActivo) root.innerHTML = renderDetalle();
   else if (state.vista === 'kanban') root.innerHTML = renderKanban();
   else if (state.vista === 'stock') root.innerHTML = renderStock();
-  else if (state.vista === 'config') root.innerHTML = renderConfig();
+  else if (state.vista === 'config') { root.innerHTML = renderConfig(); setTimeout(_initConfigScrollSpy, 50); }
   attachEvents();
 }
 
@@ -2020,7 +2020,6 @@ function renderConfig() {
     <a data-target="cfg-herrajes" class="cfg-nav-link" onclick="document.getElementById('cfg-herrajes').scrollIntoView({behavior:'smooth'});return false;" style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;background:var(--surface);border:1px solid var(--border);color:var(--text2);cursor:pointer;text-decoration:none;white-space:nowrap;transition:all 0.15s;">🔩 Herrajes</a>
     <a data-target="cfg-tipologias" class="cfg-nav-link" onclick="document.getElementById('cfg-tipologias').scrollIntoView({behavior:'smooth'});return false;" style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;background:var(--surface);border:1px solid var(--border);color:var(--text2);cursor:pointer;text-decoration:none;white-space:nowrap;transition:all 0.15s;">🪟 Tipologías</a>
   </div>
-  <script>setTimeout(_initConfigScrollSpy, 100);</script>
 
   <div id="cfg-params" class="config-section">
     <div class="config-title">Parametros de calculo</div>
