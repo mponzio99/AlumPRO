@@ -1330,7 +1330,19 @@ function render() {
 // LISTA PRESUPUESTOS
 // ============================================================
 function renderLista() {
-  const ps = state.presupuestos;
+  // Sort by date descending + apply search filter
+  const _busqueda = (state._presupuestosBusqueda || '').toLowerCase().trim();
+  const ps = state.presupuestos
+    .filter(p => {
+      if (!_busqueda) return true;
+      return (p.cliente||'').toLowerCase().includes(_busqueda)
+        || (p.obra||'').toLowerCase().includes(_busqueda);
+    })
+    .slice()
+    .sort((a, b) => {
+      const fa = new Date(a.fecha || 0), fb = new Date(b.fecha || 0);
+      return isNaN(fa) || isNaN(fb) ? 0 : fb - fa;
+    });
   const criterio = state._criterioPrecio || 'proporcional';
   const cards = ps.length ? ps.map(p => {
     const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
@@ -1381,13 +1393,27 @@ function renderLista() {
     </div>`;
   }).join('') : `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📋</div><p>No hay presupuestos todavía</p></div>`;
 
+  const _totalPs = state.presupuestos.length;
+  const _filtrados = ps.length;
   return `
   <div class="page-header">
     <div>
       <div class="page-title">Presupuestos</div>
-      <div class="page-sub">${ps.length} presupuesto${ps.length!==1?'s':''}</div>
+      <div class="page-sub">${_filtrados !== _totalPs ? _filtrados + ' de ' + _totalPs : _totalPs} presupuesto${_totalPs!==1?'s':''}</div>
     </div>
     <button class="btn-primary" onclick="showModalNuevoPresupuesto()">+ Nuevo presupuesto</button>
+  </div>
+  <div style="margin-bottom:16px;position:relative;">
+    <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input
+      id="ps_busqueda"
+      type="text"
+      placeholder="Buscar por cliente u obra..."
+      value="${state._presupuestosBusqueda||''}"
+      oninput="state._presupuestosBusqueda=this.value;render()"
+      style="width:100%;padding:10px 12px 10px 36px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;"
+    >
+    ${state._presupuestosBusqueda ? '<button onclick="state._presupuestosBusqueda=\'\';render()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;">×</button>' : ''}
   </div>
   <div class="card-grid">${cards}</div>`;
 }
