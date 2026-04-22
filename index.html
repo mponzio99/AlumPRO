@@ -456,6 +456,18 @@ function getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB) {
         const largoNum = evalFormula(pf.formula_largo, W, H, N);
         return { perfil, cantidad: cantNum, largo: largoNum, desc: pf.rol };
       }).filter(Boolean);
+  // Premarco: agregar perfil perimetral si configurado y seleccionado
+  if (params?.con_premarco) {
+    const _cfgPm = getConfigPremarco(linea_id);
+    if (_cfgPm?.perfil_codigo) {
+      const _pmPerfil = perfilesFiltrados.find(p => p.codigo === _cfgPm.perfil_codigo || p.id === _cfgPm.perfil_codigo);
+      if (_pmPerfil) {
+        // Premarco: 2 altos + 2 anchos del vano (perimetro exterior)
+        _cortesBase.push({ perfil: _pmPerfil, cantidad: 2, largo: H, desc: 'Premarco vertical' });
+        _cortesBase.push({ perfil: _pmPerfil, cantidad: 2, largo: W, desc: 'Premarco horizontal' });
+      }
+    }
+  }
   // Tablillas: agregar perfiles horizontales si la tipologia lo soporta y el usuario puso pct > 0
   const _pctTab = Number(params?.pct_tablillas) || 0;
   if (_pctTab > 0 && cfg.tablillas?.enabled && cfg.tablillas?.perfil_codigo) {
@@ -1171,6 +1183,10 @@ async function loadAll() {
       if (row.key && row.key.startsWith('tipologia_custom_meta__')) {
         // Metadatos de tipología custom: { id, linea_id, nombre, con_hojas, hojas_min, hojas_max, hojas_default }
         try { state.tipologias_custom.push(JSON.parse(row.value)); } catch {}
+      } else if (row.key && row.key.startsWith('premarco_')) {
+          const _pmLinea = row.key.slice('premarco_'.length);
+          if (!state.config_tipologias.__premarco__) state.config_tipologias.__premarco__ = {};
+          state.config_tipologias.__premarco__[_pmLinea] = tryParse(row.value, {});
       } else if (row.key && row.key.startsWith('tipologia_') && !row.key.startsWith('tipologia_custom_meta__')) {
         try {
           const parsed = JSON.parse(row.value);
@@ -2080,6 +2096,7 @@ function renderConfig() {
       <table><thead><tr><th>Color</th><th>Linea</th><th>Tipo</th><th>Precio/kg</th><th></th></tr></thead>
       <tbody>${preciosRows}</tbody></table>
     </div>
+    <button class="btn-secondary" style="margin-top:12px" onclick="showModalPrecioKg()">+ Agregar color / precio</button>
   </div>
 
   <div id="cfg-lineas" class="config-section">
@@ -2089,6 +2106,19 @@ function renderConfig() {
       <tbody>${lineasRows}</tbody></table>
     </div>
     <button class="btn-secondary" style="margin-top:12px" onclick="showModalLinea()">+ Nueva línea</button>
+    <div style="margin-top:20px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:10px;">Perfil de Premarco por línea</div>
+      ${state.lineas.map(l => {
+        const cfg = tryParse(state.config_tipologias?.__premarco__?.[l.id], {});
+        const perfsLinea = state.perfiles.filter(p => p.linea_id === l.id);
+        const opts = '<option value="">-- Sin premarco --</option>' + perfsLinea.map(p => '<option value="'+p.codigo+'"'+(cfg.perfil_codigo===p.codigo?' selected':'')+'>['+(p.codigo||'')+'] '+p.nombre+'</option>').join('');
+        const esc = l.id.replace(/'/g,"\'");
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+          + '<span style="font-size:13px;color:var(--text);min-width:80px;">'+l.nombre+'</span>'
+          + '<select style="flex:1;" onchange="updateConfigPremarco(\'' + esc + '\',\'perfil_codigo\',this.value)">'+opts+'</select>'
+          + '</div>';
+      }).join('')}
+    </div>
   </div>
 
   <div id="cfg-perfiles" class="config-section">
@@ -2216,6 +2246,31 @@ function updateConfigVidrio(linea_id, tipo_id, campo, valor) {
   cfg.vidrio[campo] = valor;
   saveConfigTipo(linea_id, tipo_id);
   toast('Guardado');
+}
+
+function updateConfigPremarco(linea_id, campo, valor) {
+  if (!state.config_tipologias.__premarco__) state.config_tipologias.__premarco__ = {};
+  if (!state.config_tipologias.__premarco__[linea_id]) state.config_tipologias.__premarco__[linea_id] = {};
+  state.config_tipologias.__premarco__[linea_id][campo] = valor;
+  // Save to sheet
+  const key = 'premarco_' + linea_id;
+  const val = JSON.stringify(state.config_tipologias.__premarco__[linea_id]);
+  const existing = state._rawConfig?.find(r => r.key === key);
+  if (existing) {
+    sheetsUpdateRow(SHEETS.config, existing.id, { value: val }).catch(() => {});
+    existing.value = val;
+  } else {
+    const row = { id: genId(), key, value: val };
+    sheetsAppend(SHEETS.config, row).catch(() => {});
+    if (!state._rawConfig) state._rawConfig = [];
+    state._rawConfig.push(row);
+  }
+  toast('Guardado');
+  render();
+}
+
+function getConfigPremarco(linea_id) {
+  return state.config_tipologias?.__premarco__?.[linea_id] || {};
 }
 
 function updateConfigTablillas(linea_id, tipo_id, campo, valor) {
@@ -3272,7 +3327,7 @@ function showModalNuevoPresupuesto() {
         <label>Tipo de aluminio</label>
         <select id="m_tipo_al" onchange="updatePrecioKg()">
           <option value="nuevo">Nuevo</option>
-          <option value="recuperado">Recuperado</option>
+          <option value="recuperado" selected>Recuperado</option>
         </select>
       </div>
       <div class="form-group">
@@ -3756,6 +3811,15 @@ function showAddAbertura() {
       <div class="form-group"><label>Cantidad</label><input type="number" id="m_cant" value="1" min="1" oninput="previewCalc()"></div>
     </div>
     <div id="m_params"></div>
+    <div id="m_premarco_wrap" style="display:none;">
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="m_con_premarco" onchange="previewCalc()">
+          <span>Con premarco</span>
+          <span id="m_premarco_info" style="font-size:11px;color:var(--text3);font-weight:400;"></span>
+        </label>
+      </div>
+    </div>
     <div id="m_tablillas_wrap" style="display:none;">
       <div class="form-group">
         <label>% Tablillas</label>
@@ -3822,6 +3886,10 @@ function updateParams() {
   const cfgTipo = getConfigTipo(linea, tipoId);
   const tabWrap = document.getElementById('m_tablillas_wrap');
   if (tabWrap) tabWrap.style.display = cfgTipo?.tablillas?.enabled ? '' : 'none';
+  // Show/hide premarco based on linea config
+  const cfgPm = getConfigPremarco(linea);
+  const pmWrap = document.getElementById('m_premarco_wrap');
+  if (pmWrap) pmWrap.style.display = cfgPm?.perfil_codigo ? '' : 'none';
   updatePrecioVidrio();
   previewCalc();
 }
@@ -3862,6 +3930,18 @@ function previewCalc() {
   const btnAb   = document.getElementById('btnAgregarAb');
   if (!preview) return;
   if (!W || !H || !linea || !tipoId) { preview.innerHTML = ''; if (btnAb) btnAb.disabled = true; return; }
+  // Update premarco info
+  const _cfgPmPrev = getConfigPremarco(linea);
+  const _pmInfoEl = document.getElementById('m_premarco_info');
+  const _conPm = document.getElementById('m_con_premarco')?.checked;
+  if (_pmInfoEl && _cfgPmPrev?.perfil_codigo && W && H) {
+    if (_conPm) {
+      const _pmMetros = Math.round(2*(W+H)/1000 * 100) / 100;
+      _pmInfoEl.textContent = '→ ' + _pmMetros + ' m perimetral';
+    } else {
+      _pmInfoEl.textContent = '';
+    }
+  }
   // Update tablillas info
   const _cfgTabPrev = getConfigTipo(linea, tipoId);
   if (_cfgTabPrev?.tablillas?.enabled) {
@@ -3991,6 +4071,12 @@ async function confirmarAgregarAbertura() {
     const tipoVidrio = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
     params.tipo_vidrio = tipoVidrio;
 
+    // Premarco
+    const _cfgPmSnap = getConfigPremarco(linea_id);
+    const _conPmSnap = document.getElementById('m_con_premarco')?.checked;
+    if (_cfgPmSnap?.perfil_codigo && _conPmSnap) {
+      params.con_premarco = true;
+    }
     // Tablillas
     const _cfgTabSnap = getConfigTipo(linea_id, tipoId);
     if (_cfgTabSnap?.tablillas?.enabled) {
@@ -4069,6 +4155,41 @@ async function crearLinea() {
   state.lineas.push(l);
   await sheetsAppend(SHEETS.lineas, l);
   closeModal(); toast('Linea creada'); render();
+}
+
+function showModalPrecioKg() {
+  const lineaOpts = state.lineas.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+  showModal(`
+    <div class="modal-title">Agregar Color / Precio</div>
+    <div class="form-group"><label>Línea</label><select id="m_pk_linea">${lineaOpts}</select></div>
+    <div class="form-group"><label>Color / Nombre</label><input id="m_pk_nombre" placeholder="Ej: Blanco, Natural, Gris..."></div>
+    <div class="form-group"><label>Tipo</label>
+      <select id="m_pk_tipo">
+        <option value="recuperado" selected>Recuperado</option>
+        <option value="nuevo">Nuevo</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Precio por kg ($/kg)</label>
+      <input type="number" id="m_pk_precio_new" placeholder="Ej: 9900" style="font-family:'DM Mono',monospace">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="agregarPrecioKg()">Agregar</button>
+    </div>`);
+}
+
+async function agregarPrecioKg() {
+  const linea_id = document.getElementById('m_pk_linea')?.value;
+  const nombre   = document.getElementById('m_pk_nombre')?.value?.trim();
+  const tipo     = document.getElementById('m_pk_tipo')?.value;
+  const precio   = parseFloat(document.getElementById('m_pk_precio_new')?.value);
+  if (!linea_id || !nombre || !precio) { toast('Completá todos los campos', 'error'); return; }
+  const pk = { id: genId(), linea_id, nombre, tipo, precio_kg: precio };
+  state.precios_kg.push(pk);
+  await sheetsAppend(SHEETS.precios_kg, pk);
+  closeModal();
+  toast('Color agregado');
+  render();
 }
 
 function editarPrecioKg(id) {

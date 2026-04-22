@@ -213,16 +213,23 @@ async function init() {
 
     const markup = Number(p.markup||0);
 
-    // Calculate totals per abertura (simplified)
+    // Use saved total_final if available (matches criterio_precio used in app)
+    // Otherwise calculate from abertura costs
     let subtotal = 0;
     abs.forEach(a => {
-      subtotal += Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0);
+      const cp = parseFloat(a.costo_perfiles) || 0;
+      const cv = parseFloat(a.costo_vidrios)  || 0;
+      const ch = parseFloat(a.costo_herrajes) || 0;
+      subtotal += cp + cv + ch;
     });
-    const totalFinal = subtotal * (1 + markup/100);
+    // Use p.total_final if it's valid (saved by app with correct criterio)
+    const totalFinal = (p.total_final && !isNaN(parseFloat(p.total_final)))
+      ? parseFloat(p.total_final)
+      : subtotal * (1 + markup/100);
 
     // Build aberturas HTML
     const aberturasHtml = abs.map((a, i) => {
-      const costoAb = (Number(a.costo_perfiles||0) + Number(a.costo_vidrios||0) + Number(a.costo_herrajes||0));
+      const costoAb = (parseFloat(a.costo_perfiles)||0) + (parseFloat(a.costo_vidrios)||0) + (parseFloat(a.costo_herrajes)||0);
       const precioUnit = costoAb * (1 + markup/100);
       const precioTotal = precioUnit * (Number(a.cantidad)||1);
 
