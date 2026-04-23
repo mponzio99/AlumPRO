@@ -4607,9 +4607,11 @@ function imprimirPresupuesto(id) {
         + '</div>'
       : svgContent;
     const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0 };
-    const precioUnitarioSinMarkup = (isNaN(c.perfiles)?0:c.perfiles) + (isNaN(c.vidrios)?0:c.vidrios) + (isNaN(c.herrajes)?0:c.herrajes);
-    const precioUnitario = precioUnitarioSinMarkup * (1 + markup / 100);
-    const precioTotal = precioUnitario * Number(a.cantidad);
+    // costos ya incluye cant (mmPorAb multiplica por cant) → precioTotal directo
+    const costoTotal = (isNaN(c.perfiles)?0:c.perfiles) + (isNaN(c.vidrios)?0:c.vidrios) + (isNaN(c.herrajes)?0:c.herrajes);
+    const precioTotal = costoTotal * (1 + markup / 100);
+    const cant = Number(a.cantidad) || 1;
+    const precioUnitario = precioTotal / cant;
     const seccionesListPdf = a.es_modulo && a.secciones && a.secciones.length
       ? '<div style="margin-top:6px;padding:6px 10px;background:#f8fafc;border-radius:6px;border-left:3px solid #00b37e;">'
         + a.secciones.map(sec =>
@@ -4699,17 +4701,21 @@ async function exportarWord(id) {
   const pngs = await Promise.all(abs.map(a => svgToPngDataUri(a.tipo_id, a.ancho, a.alto)));
 
   const filaAberturas = abs.map((a, i) => {
-    const total = Number(a.costo_perfiles||0)+Number(a.costo_vidrios||0)+Number(a.costo_herrajes||0);
+    const costoAb = (parseFloat(a.costo_perfiles)||0)+(parseFloat(a.costo_vidrios)||0)+(parseFloat(a.costo_herrajes)||0);
+    const precioTotalAb = costoAb * (1 + markup/100);
+    const cantAb = Number(a.cantidad) || 1;
+    const precioUnitAb = precioTotalAb / cantAb;
+    const total = precioTotalAb; // used below for the row total
     const imgTag = pngs[i] ? '<img src="'+pngs[i]+'" width="90" style="display:block;margin:0 auto;" alt="abertura">' : '';
     return '<tr>'
       +'<td style="border:1px solid #ccc;padding:8px;text-align:center;vertical-align:middle;">'+(i+1)+'</td>'
       +'<td style="border:1px solid #ccc;padding:10px;text-align:center;vertical-align:middle;">'+imgTag+'</td>'
       +'<td style="border:1px solid #ccc;padding:8px;vertical-align:middle;">'
         +'<b style="font-size:11pt;">'+a.nombre+'</b><br>'
-        +'<span style="font-size:9pt;color:#555;">'+a.ancho+' x '+a.alto+' mm &nbsp;·&nbsp; '+a.cantidad+' u. &nbsp;·&nbsp; '+a.linea+'</span><br>'
+        +'<span style="font-size:9pt;color:#555;">'+a.ancho+' x '+a.alto+' mm &nbsp;·&nbsp; '+cantAb+' u. &nbsp;·&nbsp; '+fmt(precioUnitAb)+' c/u &nbsp;·&nbsp; '+a.linea+'</span><br>'
         +'<span style="font-size:9pt;color:#555;">'+(p.color_al||'-')+'</span>'
       +'</td>'
-      +'<td style="border:1px solid #ccc;padding:8px;text-align:right;vertical-align:middle;white-space:nowrap;font-weight:bold;font-size:11pt;">'+fmt(total * Number(a.cantidad))+'</td>'
+      +'<td style="border:1px solid #ccc;padding:8px;text-align:right;vertical-align:middle;white-space:nowrap;font-weight:bold;font-size:11pt;">'+fmt(total)+'</td>'
       +'</tr>';
   }).join('');
 

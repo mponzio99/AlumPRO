@@ -230,8 +230,10 @@ async function init() {
     // Build aberturas HTML
     const aberturasHtml = abs.map((a, i) => {
       const costoAb = (parseFloat(a.costo_perfiles)||0) + (parseFloat(a.costo_vidrios)||0) + (parseFloat(a.costo_herrajes)||0);
-      const precioUnit = costoAb * (1 + markup/100);
-      const precioTotal = precioUnit * (Number(a.cantidad)||1);
+      // costoAb already includes all units (cant multiplied in bin packing)
+      const precioTotal = costoAb * (1 + markup/100);
+      const cantA = Number(a.cantidad) || 1;
+      const precioUnit = precioTotal / cantA;
 
       const svgContent = a.es_modulo
         ? svgModulo(a.secciones, a.alto, 130, 80)
