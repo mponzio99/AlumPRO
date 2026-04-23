@@ -1698,9 +1698,15 @@ function renderDetalle() {
         <span style="font-size:13px;color:var(--text2);font-weight:600;">Criterio de precio:</span>
         <select style="flex:1;max-width:280px;" onchange="setCriterioPrecio(this.value)">${criterioOpts}</select>
       </div>
-      <h3 style="font-size:14px;font-weight:700;color:var(--text2);margin-bottom:14px;text-transform:uppercase;letter-spacing:0.05em">Materiales consolidados — click para ver cortes por barra</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <h3 style="font-size:14px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin:0;">Materiales consolidados — click para ver cortes por barra</h3>
+        <button onclick="imprimirPlanCortes('${p.id}')" style="display:flex;align-items:center;gap:6px;padding:7px 14px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer;font-size:12px;font-weight:600;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Imprimir plan de cortes
+        </button>
+      </div>
       ${matRows}
-      <h3 style="font-size:14px;font-weight:700;color:var(--text2);margin:24px 0 14px;text-transform:uppercase;letter-spacing:0.05em">Detalle por abertura</h3>
+      <h3 style="font-size:14px;font-weight:700;color:var(--text2);margin:24px 0 14px;text-transform:uppercase;letter-spacing:0.05em;">Detalle por abertura</h3>
       ${detalle || '<p style="color:var(--text3)">Sin aberturas</p>'}`;
   }
 
@@ -4573,6 +4579,151 @@ function compartirPresupuesto(id) {
   } else {
     prompt('Copiá este link:', link);
   }
+}
+
+
+function imprimirPlanCortes(presupuestoId) {
+  const p = state.presupuestos.find(x => x.id === presupuestoId);
+  if (!p) return;
+  const abs = state.aberturas.filter(a => a.presupuesto_id === presupuestoId);
+  const precioKg = getPrecioKgPresupuesto(p);
+  const criterio = state._criterioPrecio || p.criterio_precio || 'proporcional';
+  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+
+  // Build consolidated cuts per perfil
+  const barrasAcum = {};
+  for (const a of abs) {
+    const cant = Number(a.cantidad) || 1;
+    const params = tryParse(a.params, {});
+    const cortesRaw = a.es_modulo
+      ? calcularModulo(a, state.perfiles, state.herrajes)
+      : getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
+    const perfilesFiltrados = state.perfiles.filter(pf => pf.linea_id === a.linea_id);
+    const agrupados = {};
+    for (const c of cortesRaw) {
+      if (!c.perfil) continue;
+      const k = c.perfil.codigo || c.perfil.id;
+      if (!agrupados[k]) agrupados[k] = [];
+      agrupados[k].push({ largo: c.largo, cantidad: c.cantidad * cant, desc: c.desc || '' });
+    }
+    const { barrasFinales } = optimizarCortesConSobrantes(agrupados, perfilesFiltrados, precioKg, barrasAcum);
+    Object.assign(barrasAcum, barrasFinales);
+  }
+
+  // HTML for consolidated section
+  const perfilesHtml = Object.entries(barrasAcum).map(([k, barras]) => {
+    const perfil = state.perfiles.find(p => p.codigo === k || p.id === k);
+    const nombre = perfil ? '[' + k + '] ' + perfil.nombre : k;
+    const largoBarra = Number(perfil?.largo_barra || 6000);
+    const barrasHtml = barras.map((b, bi) => {
+      const mmUsados = largoBarra - (b.resto || 0);
+      const pct = Math.round((mmUsados / largoBarra) * 100);
+      const color = pct >= 90 ? '#00b37e' : pct >= 70 ? '#f59e0b' : '#ef4444';
+      const piezas = (b.piezas || []).map(pi =>
+        '<span style="display:inline-block;background:#e0f2fe;border-radius:4px;padding:2px 7px;font-size:10pt;margin:2px;font-family:monospace;color:#0369a1;">'
+        + pi.largo + 'mm</span>'
+      ).join('');
+      return '<div style="margin-bottom:10px;padding:10px;background:#f8fafc;border-radius:6px;border-left:3px solid ' + color + ';">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+        +   '<span style="font-size:10pt;font-weight:700;color:#374151;">Barra ' + (bi+1) + '</span>'
+        +   '<span style="font-size:9pt;color:#64748b;">' + mmUsados + '/' + largoBarra + 'mm &nbsp;·&nbsp; resto: ' + (b.resto||0) + 'mm &nbsp;·&nbsp; <b style="color:' + color + '">' + pct + '%</b></span>'
+        + '</div>'
+        + '<div>' + piezas + '</div>'
+        + '</div>';
+    }).join('');
+    return '<div style="margin-bottom:20px;page-break-inside:avoid;">'
+      + '<div style="font-size:12pt;font-weight:700;color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between;">'
+      +   '<span>' + nombre + '</span>'
+      +   '<span style="font-size:10pt;font-weight:400;color:#64748b;">' + barras.length + ' barra' + (barras.length!==1?'s':'') + '</span>'
+      + '</div>'
+      + barrasHtml
+      + '</div>';
+  }).join('');
+
+  // HTML for detalle por abertura
+  const detalleHtml = abs.map((a, idx) => {
+    const cant = Number(a.cantidad) || 1;
+    const params = tryParse(a.params, {});
+    const cortesRaw = a.es_modulo
+      ? calcularModulo(a, state.perfiles, state.herrajes)
+      : getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
+    const perfilesFiltrados = state.perfiles.filter(pf => pf.linea_id === a.linea_id);
+    const perfilesUsados = [...new Set(cortesRaw.filter(c => c.perfil).map(c => c.perfil.codigo || c.perfil.id))];
+    const filasPerf = perfilesUsados.map(k => {
+      const perfil = perfilesFiltrados.find(pf => pf.codigo === k || pf.id === k);
+      const piezas = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k));
+      const rows = piezas.map(c =>
+        '<tr>'
+        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;">' + (c.desc || '-') + '</td>'
+        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">' + c.largo + ' mm</td>'
+        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">' + (c.cantidad * cant) + '</td>'
+        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">' + (c.largo * c.cantidad * cant) + ' mm</td>'
+        + '</tr>'
+      ).join('');
+      return '<div style="margin-bottom:10px;">'
+        + '<div style="font-size:10pt;font-weight:700;color:#374151;background:#f1f5f9;padding:5px 8px;border-radius:4px;margin-bottom:4px;">'
+        +   '[' + k + '] ' + (perfil?.nombre || k)
+        + '</div>'
+        + '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;">'
+        +   '<thead><tr style="background:#e2e8f0;">'
+        +     '<th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:left;">Descripción</th>'
+        +     '<th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">Largo</th>'
+        +     '<th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">Cant.</th>'
+        +     '<th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">Total mm</th>'
+        +   '</tr></thead>'
+        +   '<tbody>' + rows + '</tbody>'
+        + '</table>'
+        + '</div>';
+    }).join('');
+    return '<div style="margin-bottom:24px;page-break-inside:avoid;">'
+      + '<div style="background:#0f172a;color:#fff;padding:8px 12px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center;">'
+      +   '<span style="font-size:11pt;font-weight:700;">' + (idx+1).toString().padStart(2,'0') + '. ' + a.nombre + '</span>'
+      +   '<span style="font-size:9.5pt;opacity:0.8;">' + a.ancho + ' x ' + a.alto + ' mm &nbsp;·&nbsp; ' + cant + ' u.</span>'
+      + '</div>'
+      + '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;padding:12px;">'
+      + filasPerf
+      + '</div>'
+      + '</div>';
+  }).join('');
+
+  const fmtFecha = f => {
+    if (!f) return '-';
+    if (typeof f === 'string' && f.includes('GMT')) {
+      const d = new Date(f);
+      return !isNaN(d) ? String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear() : f;
+    }
+    return f;
+  };
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Plan de cortes — ${p.cliente}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1a1a1a; padding: 20px; max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 18pt; color: #0f172a; margin-bottom: 4px; }
+    h2 { font-size: 13pt; color: #0f172a; border-bottom: 2px solid #0f172a; padding-bottom: 6px; margin: 24px 0 14px; }
+    .meta { font-size: 9.5pt; color: #64748b; margin-bottom: 20px; }
+    @media print {
+      body { padding: 10px; }
+      h2 { page-break-before: auto; }
+      button { display: none !important; }
+    }
+  </style>
+  </head><body>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+    <div>
+      <h1>Plan de cortes</h1>
+      <div class="meta">${p.cliente} &nbsp;·&nbsp; ${p.obra || ''} &nbsp;·&nbsp; ${fmtFecha(p.fecha)}</div>
+    </div>
+    <button onclick="window.print()" style="padding:8px 18px;background:#0f172a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:11pt;font-weight:600;">Imprimir / PDF</button>
+  </div>
+  <h2>Cortes consolidados por perfil</h2>
+  ${perfilesHtml}
+  <h2>Detalle por abertura</h2>
+  ${detalleHtml}
+  </body></html>`);
+  win.document.close();
 }
 
 function imprimirPresupuesto(id) {
