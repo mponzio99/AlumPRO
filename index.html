@@ -474,11 +474,13 @@ function getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB) {
     const _tabPerfil = perfilesFiltrados.find(p =>
       p.codigo === cfg.tablillas.perfil_codigo || p.id === cfg.tablillas.perfil_codigo);
     if (_tabPerfil) {
-      const _altoTab = Number(cfg.tablillas.alto_tablilla) || 80;
-      const _altoZona = Math.round(H * _pctTab / 100);
+      const _altoTab = Number(cfg.tablillas.alto_tablilla) || 100;
+      const _altoZona = Math.max(0, Math.round(H * _pctTab / 100) - 150); // zona tablillas - 150mm rebaje
       const _nTab = Math.max(1, Math.floor(_altoZona / _altoTab));
-      const _anchoHoja = Math.round(W / (Number(params?.hojas) || 1));
-      _cortesBase.push({ perfil: _tabPerfil, cantidad: _nTab, largo: _anchoHoja, desc: 'Tablilla' });
+      const _anchoHoja = Math.max(0, Math.round(W / (Number(params?.hojas) || 1)) - 150); // W/N - 150mm rebaje
+      if (_nTab > 0 && _anchoHoja > 0) {
+        _cortesBase.push({ perfil: _tabPerfil, cantidad: _nTab, largo: _anchoHoja, desc: 'Tablilla' });
+      }
     }
   }
   return _cortesBase;
@@ -4348,7 +4350,7 @@ async function crearStock() {
 // ============================================================
 // SVG DESCRIPTIVOS POR TIPO DE ABERTURA (con proporciones reales)
 // ============================================================
-function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH) {
+function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
   // Calcular dimensiones respetando la proporción real de la abertura
   maxW = maxW || 160;
   maxH = maxH || 200;
@@ -4462,10 +4464,36 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH) {
     interior = '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
   }
 
+  // Tablillas overlay — dibuja zona tablillas sobre el interior
+  let tabOverlay = '';
+  const _pctTab = Number(params?.pct_tablillas) || 0;
+  if (_pctTab > 0) {
+    const _tabPos = params?.tab_pos || 'abajo';
+    const _tabH = Math.round(iH * _pctTab / 100);
+    const _vidH = iH - _tabH;
+    const _tabY = _tabPos === 'arriba' ? pad + 2 : pad + 2 + _vidH;
+    const _vidY = _tabPos === 'arriba' ? pad + 2 + _tabH : pad + 2;
+    const _altoTabPerfil = Math.max(4, Math.round(_tabH / Math.max(1, Math.floor(_tabH / 12))));
+    // Zona vidrio
+    tabOverlay += '<rect x="'+(pad+2)+'" y="'+_vidY+'" width="'+(iW-4)+'" height="'+_vidH+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.9"/>';
+    // Zona tablillas — fondo gris
+    tabOverlay += '<rect x="'+(pad+2)+'" y="'+_tabY+'" width="'+(iW-4)+'" height="'+_tabH+'" fill="#cbd5e1" stroke="'+fc+'" stroke-width="1"/>';
+    // Líneas de tablillas
+    let _ty = _tabY + _altoTabPerfil;
+    while (_ty < _tabY + _tabH - 2) {
+      tabOverlay += '<line x1="'+(pad+2)+'" y1="'+_ty+'" x2="'+(W-pad-2)+'" y2="'+_ty+'" stroke="'+fc+'" stroke-width="0.8" opacity="0.6"/>';
+      _ty += _altoTabPerfil;
+    }
+    // Reset interior to just the frame (no glass fill since we redraw zones)
+    interior = '';
+  }
+
   return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg">'
     // Marco exterior
     + '<rect x="0" y="0" width="'+W+'" height="'+H+'" rx="2" fill="#f8fafc" stroke="'+fc+'" stroke-width="'+sw+'"/>'
-    + interior
+    + (_pctTab > 0 ? '' : interior)
+    + tabOverlay
+    + (_pctTab === 0 ? '' : interior)
     // Etiqueta de medidas
     + '<text x="'+cx+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="9" fill="'+fc+'" font-family="monospace" font-weight="600">'+label+'</text>'
     + '</svg>';
@@ -4543,9 +4571,9 @@ function svgModuloV(secciones, anchomm, maxW, maxH) {
 }
 
 // Convierte SVG a PNG data URI via Canvas (para Word)
-function svgToPngDataUri(tipo_id, anchoMm, altoMm) {
+function svgToPngDataUri(tipo_id, anchoMm, altoMm, params) {
   return new Promise((resolve) => {
-    const svg = svgAbertura(tipo_id, anchoMm, altoMm, 120, 160);
+    const svg = svgAbertura(tipo_id, anchoMm, altoMm, 120, 160, params);
     const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     const img = new Image();
@@ -4740,7 +4768,7 @@ function imprimirPresupuesto(id) {
   const totalFinal = subtotal * (1 + markup / 100);
 
   const aberturasHtml = abs.map((a, i) => {
-    const svgContent = a.es_modulo ? svgModulo(a.secciones, a.alto, 130, 80) : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180);
+    const svgContent = a.es_modulo ? svgModulo(a.secciones, a.alto, 130, 80) : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
     // Get gif_url from tipologia config
     const _cfgGif = a.es_modulo ? null : getConfigTipo(a.linea_id, a.tipo_id);
     const gifUrl = _cfgGif?.gif_url || '';
@@ -4849,7 +4877,7 @@ async function exportarWord(id) {
   const totalFinal = subtotal * (1 + markup / 100);
 
   // Generar todos los PNG en paralelo
-  const pngs = await Promise.all(abs.map(a => svgToPngDataUri(a.tipo_id, a.ancho, a.alto)));
+  const pngs = await Promise.all(abs.map(a => svgToPngDataUri(a.tipo_id, a.ancho, a.alto, tryParse(a.params, {}))));
 
   const filaAberturas = abs.map((a, i) => {
     const costoAb = (parseFloat(a.costo_perfiles)||0)+(parseFloat(a.costo_vidrios)||0)+(parseFloat(a.costo_herrajes)||0);

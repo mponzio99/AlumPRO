@@ -228,11 +228,18 @@ async function init() {
       : subtotal * (1 + markup/100);
 
     // Build aberturas HTML
+    // Distribute total_final proportionally across aberturas by their cost ratio
+    const _costosPorAb = abs.map(a =>
+      (parseFloat(a.costo_perfiles)||0) + (parseFloat(a.costo_vidrios)||0) + (parseFloat(a.costo_herrajes)||0)
+    );
+    const _costosTotalSum = _costosPorAb.reduce((s,c) => s+c, 0);
+
     const aberturasHtml = abs.map((a, i) => {
-      const costoAb = (parseFloat(a.costo_perfiles)||0) + (parseFloat(a.costo_vidrios)||0) + (parseFloat(a.costo_herrajes)||0);
-      // costoAb already includes all units (cant multiplied in bin packing)
-      const precioTotal = costoAb * (1 + markup/100);
+      const costoAb = _costosPorAb[i];
       const cantA = Number(a.cantidad) || 1;
+      // Distribute total_final by cost ratio — avoids stale per-abertura costs
+      const fraccion = _costosTotalSum > 0 ? costoAb / _costosTotalSum : (1 / abs.length);
+      const precioTotal = totalFinal * fraccion;
       const precioUnit = precioTotal / cantA;
 
       const svgContent = a.es_modulo
