@@ -4618,7 +4618,7 @@ function imprimirPlanCortes(presupuestoId) {
   const criterio = state._criterioPrecio || p.criterio_precio || 'proporcional';
   const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
 
-  // Build consolidated cuts per perfil
+  // ── 1. Consolidated bin packing for profiles ─────────────────────────────
   const barrasAcum = {};
   for (const a of abs) {
     const cant = Number(a.cantidad) || 1;
@@ -4638,38 +4638,155 @@ function imprimirPlanCortes(presupuestoId) {
     Object.assign(barrasAcum, barrasFinales);
   }
 
-  // HTML for consolidated section
+  // ── 2. Collect all glass pieces ──────────────────────────────────────────
+  const vidriosSimples = []; // { ancho, alto, desc, abertura }
+  const vidrosDVH = [];      // { ancho, alto, cantidad, desc, abertura }
+  for (const a of abs) {
+    const cant = Number(a.cantidad) || 1;
+    const params = tryParse(a.params, {});
+    const tv = params.tipo_vidrio || 'vcomon';
+    const vids = tryParse(a.vidrios, []) || [];
+    for (const v of vids) {
+      const entry = { ancho: v.ancho, alto: v.alto, desc: v.desc || '', abertura: a.nombre, cantidad: v.cant * cant };
+      if (tv === 'dvh') vidrosDVH.push(entry);
+      else vidriosSimples.push(entry);
+    }
+    // If no saved vidrios, calculate on the fly
+    if (!vids.length && !a.es_modulo) {
+      const cfg = getConfigTipo(a.linea_id, a.tipo_id);
+      if (cfg?.vidrio) {
+        const v = cfg.vidrio;
+        const N = Number(params.hojas) || 1;
+        const pctTab = Number(params.pct_tablillas) || 0;
+        const Heff = pctTab > 0 ? Math.round(Number(a.alto) * (1 - pctTab/100)) : Number(a.alto);
+        const fA = tv==='dvh' ? (v.formula_ancho_dvh||v.formula_ancho||'') : (v.formula_ancho_vcomon||v.formula_ancho||'');
+        const fH = tv==='dvh' ? (v.formula_alto_dvh||v.formula_alto||'') : (v.formula_alto_vcomon||v.formula_alto||'');
+        if (fA && fH) {
+          const vA = evalFormula(fA, Number(a.ancho), Heff, N);
+          const vH = evalFormula(fH, Number(a.ancho), Heff, N);
+          if (vA > 0 && vH > 0) {
+            const entry = { ancho: vA, alto: vH, desc: 'Vidrio', abertura: a.nombre, cantidad: N * cant };
+            if (tv === 'dvh') vidrosDVH.push(entry); else vidriosSimples.push(entry);
+          }
+        }
+      }
+    }
+  }
+
+  // ── 3. Glass bin packing (guillotine strips) ─────────────────────────────
+  const PLACA_W = 1800, PLACA_H = 2500;
+  function packGlass(pieces) {
+    // Expand pieces by quantity, sort largest first
+    const expanded = [];
+    for (const pc of pieces) {
+      for (let i = 0; i < (pc.cantidad || 1); i++) {
+        expanded.push({ ancho: pc.ancho, alto: pc.alto, desc: pc.desc, abertura: pc.abertura });
+      }
+    }
+    expanded.sort((a, b) => (b.ancho * b.alto) - (a.ancho * a.alto));
+    
+    const placas = []; // each: { piezas: [{ancho,alto,x,y,desc,abertura}], usedArea }
+    
+    for (const piece of expanded) {
+      if (piece.ancho > PLACA_W || piece.alto > PLACA_H) {
+        // Oversized — try rotated
+        if (piece.alto <= PLACA_W && piece.ancho <= PLACA_H) {
+          [piece.ancho, piece.alto] = [piece.alto, piece.ancho];
+        } else {
+          // Too large for any placa — add solo
+          placas.push({ piezas: [{ ...piece, x: 0, y: 0 }], usedArea: piece.ancho * piece.alto });
+          continue;
+        }
+      }
+      // Try to fit in existing placas using shelf algorithm
+      let placed = false;
+      for (const placa of placas) {
+        // Find lowest shelf position
+        let bestX = 0, bestY = PLACA_H, bestShelf = null;
+        // Simple shelf packing: track shelf heights
+        if (!placa.shelves) placa.shelves = [{ y: 0, maxH: 0, usedW: 0 }];
+        for (const shelf of placa.shelves) {
+          if (shelf.usedW + piece.ancho <= PLACA_W && shelf.y + piece.alto <= PLACA_H) {
+            if (shelf.y < bestY) {
+              bestY = shelf.y; bestX = shelf.usedW; bestShelf = shelf;
+            }
+          }
+        }
+        if (bestShelf) {
+          placa.piezas.push({ ...piece, x: bestX, y: bestY });
+          bestShelf.usedW += piece.ancho;
+          bestShelf.maxH = Math.max(bestShelf.maxH, piece.alto);
+          // Open new shelf if needed
+          const newShelfY = bestShelf.y + bestShelf.maxH;
+          if (!placa.shelves.find(s => s.y === newShelfY) && newShelfY < PLACA_H) {
+            placa.shelves.push({ y: newShelfY, maxH: 0, usedW: 0 });
+          }
+          placa.usedArea += piece.ancho * piece.alto;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        const newPlaca = { piezas: [], shelves: [{ y: 0, maxH: 0, usedW: 0 }], usedArea: 0 };
+        const shelf = newPlaca.shelves[0];
+        newPlaca.piezas.push({ ...piece, x: 0, y: 0 });
+        shelf.usedW = piece.ancho;
+        shelf.maxH = piece.alto;
+        if (piece.alto < PLACA_H) newPlaca.shelves.push({ y: piece.alto, maxH: 0, usedW: 0 });
+        newPlaca.usedArea = piece.ancho * piece.alto;
+        placas.push(newPlaca);
+      }
+    }
+    return placas;
+  }
+
+  const placasSimples = packGlass(vidriosSimples);
+
+  // ── 4. SVG for each placa ────────────────────────────────────────────────
+  const COLORS = ['#bfdbfe','#bbf7d0','#fef08a','#fecaca','#e9d5ff','#fed7aa','#cffafe','#d1fae5'];
+  function svgPlaca(placa, idx) {
+    const scaleW = 280, scaleH = Math.round(scaleW * PLACA_H / PLACA_W);
+    const sx = v => Math.round(v * scaleW / PLACA_W);
+    const sy = v => Math.round(v * scaleH / PLACA_H);
+    const pct = Math.round(placa.usedArea / (PLACA_W * PLACA_H) * 100);
+    let rects = placa.piezas.map((pc, i) => {
+      const col = COLORS[i % COLORS.length];
+      const x = sx(pc.x), y = sy(pc.y), w = Math.max(2, sx(pc.ancho)), h = Math.max(2, sy(pc.alto));
+      const cx2 = x + w/2, cy2 = y + h/2;
+      const label = pc.ancho + 'x' + pc.alto;
+      const fs = Math.min(10, Math.max(6, Math.floor(w/8)));
+      return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+col+'" stroke="#0369a1" stroke-width="1" rx="1"/>'        + (w > 35 && h > 14 ? '<text x="'+cx2+'" y="'+(cy2+fs/3)+'" text-anchor="middle" font-size="'+fs+'" fill="#1e3a5f" font-family="monospace">'+label+'</text>' : '');
+    }).join('');
+    return '<div style="display:inline-block;margin:8px;vertical-align:top;">'      + '<div style="font-size:9pt;color:#64748b;margin-bottom:4px;text-align:center;">Placa '+(idx+1)+' &nbsp;·&nbsp; <b style="color:'+(pct>90?'#ef4444':pct>70?'#f59e0b':'#16a34a')+'">'+pct+'% usado</b></div>'      + '<svg width="'+scaleW+'" height="'+scaleH+'" style="border:1.5px solid #94a3b8;border-radius:4px;background:#f0f9ff;">'      + rects      + '</svg>'      + '</div>';
+  }
+
+  const placasHtml = placasSimples.length
+    ? '<div style="margin-bottom:6px;font-size:10.5pt;"><b>'+placasSimples.length+' placa'+(placasSimples.length!==1?'s':'')+' 1800×2500mm</b></div>'      + '<div style="display:flex;flex-wrap:wrap;">'+placasSimples.map((pl,i) => svgPlaca(pl,i)).join('')+'</div>'
+    : '<p style="color:#64748b">Sin vidrios simples.</p>';
+
+  const dvhHtml = vidrosDVH.length
+    ? '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin-top:8px;">'      + '<thead><tr style="background:#e2e8f0;"><th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:left;">Abertura</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Medida</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Cant.</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Descripción</th></tr></thead>'      + '<tbody>'+vidrosDVH.map(v => '<tr><td style="padding:5px 8px;border:1px solid #e2e8f0;">'+v.abertura+'</td><td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">'+v.ancho+'×'+v.alto+'mm</td><td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">'+v.cantidad+'</td><td style="padding:5px 8px;border:1px solid #e2e8f0;">'+v.desc+'</td></tr>').join('')+'</tbody>'      + '</table>'
+    : '';
+
+  // ── 5. Profile cuts HTML ─────────────────────────────────────────────────
   const perfilesHtml = Object.entries(barrasAcum).map(([k, barras]) => {
-    const perfil = state.perfiles.find(p => p.codigo === k || p.id === k);
+    const perfil = state.perfiles.find(pf => pf.codigo === k || pf.id === k);
     const nombre = perfil ? '[' + k + '] ' + perfil.nombre : k;
     const largoBarra = Number(perfil?.largo_barra || 6000);
-    const barrasHtml = barras.map((b, bi) => {
+    const barrasHtml2 = barras.map((b, bi) => {
       const mmUsados = largoBarra - (b.resto || 0);
       const pct = Math.round((mmUsados / largoBarra) * 100);
       const color = pct >= 90 ? '#00b37e' : pct >= 70 ? '#f59e0b' : '#ef4444';
       const piezas = (b.piezas || []).map(pi =>
-        '<span style="display:inline-block;background:#e0f2fe;border-radius:4px;padding:2px 7px;font-size:10pt;margin:2px;font-family:monospace;color:#0369a1;">'
-        + pi.largo + 'mm</span>'
+        '<span style="display:inline-block;background:#e0f2fe;border-radius:4px;padding:2px 7px;font-size:10pt;margin:2px;font-family:monospace;color:#0369a1;">'+pi.largo+'mm</span>'
       ).join('');
-      return '<div style="margin-bottom:10px;padding:10px;background:#f8fafc;border-radius:6px;border-left:3px solid ' + color + ';">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
-        +   '<span style="font-size:10pt;font-weight:700;color:#374151;">Barra ' + (bi+1) + '</span>'
-        +   '<span style="font-size:9pt;color:#64748b;">' + mmUsados + '/' + largoBarra + 'mm &nbsp;·&nbsp; resto: ' + (b.resto||0) + 'mm &nbsp;·&nbsp; <b style="color:' + color + '">' + pct + '%</b></span>'
-        + '</div>'
-        + '<div>' + piezas + '</div>'
-        + '</div>';
+      return '<div style="margin-bottom:10px;padding:10px;background:#f8fafc;border-radius:6px;border-left:3px solid '+color+';">'        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'        +   '<span style="font-size:10pt;font-weight:700;color:#374151;">Barra '+(bi+1)+'</span>'        +   '<span style="font-size:9pt;color:#64748b;">'+mmUsados+'/'+largoBarra+'mm · resto: '+(b.resto||0)+'mm · <b style="color:'+color+'">'+pct+'%</b></span>'        + '</div>'        + '<div>'+piezas+'</div>'        + '</div>';
     }).join('');
-    return '<div style="margin-bottom:20px;page-break-inside:avoid;">'
-      + '<div style="font-size:12pt;font-weight:700;color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between;">'
-      +   '<span>' + nombre + '</span>'
-      +   '<span style="font-size:10pt;font-weight:400;color:#64748b;">' + barras.length + ' barra' + (barras.length!==1?'s':'') + '</span>'
-      + '</div>'
-      + barrasHtml
-      + '</div>';
+    return '<div style="margin-bottom:20px;page-break-inside:avoid;">'      + '<div style="font-size:12pt;font-weight:700;color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between;">'      +   '<span>'+nombre+'</span>'      +   '<span style="font-size:10pt;font-weight:400;color:#64748b;">'+barras.length+' barra'+(barras.length!==1?'s':'')+'</span>'      + '</div>'      + barrasHtml2      + '</div>';
   }).join('');
 
-  // HTML for detalle por abertura
-  const detalleHtml = abs.map((a, idx) => {
+  // ── 6. Detail per abertura (cuts + herrajes) ─────────────────────────────
+  const detalleHtml = abs.map((a, abIdx) => {
     const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
     const cortesRaw = a.es_modulo
@@ -4677,41 +4794,33 @@ function imprimirPlanCortes(presupuestoId) {
       : getCortesRaw(a.linea_id, a.tipo_id, Number(a.ancho), Number(a.alto), params, state.perfiles);
     const perfilesFiltrados = state.perfiles.filter(pf => pf.linea_id === a.linea_id);
     const perfilesUsados = [...new Set(cortesRaw.filter(c => c.perfil).map(c => c.perfil.codigo || c.perfil.id))];
+
     const filasPerf = perfilesUsados.map(k => {
       const perfil = perfilesFiltrados.find(pf => pf.codigo === k || pf.id === k);
       const piezas = cortesRaw.filter(c => c.perfil && (c.perfil.codigo === k || c.perfil.id === k));
       const rows = piezas.map(c =>
-        '<tr>'
-        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;">' + (c.desc || '-') + '</td>'
-        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">' + c.largo + ' mm</td>'
-        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">' + (c.cantidad * cant) + '</td>'
-        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">' + (c.largo * c.cantidad * cant) + ' mm</td>'
-        + '</tr>'
+        '<tr>'        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;">'+( c.desc || '-')+'</td>'        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">'+c.largo+' mm</td>'        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">'+(c.cantidad * cant)+'</td>'        + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">'+(c.largo * c.cantidad * cant)+' mm</td>'        + '</tr>'
       ).join('');
-      return '<div style="margin-bottom:10px;">'
-        + '<div style="font-size:10pt;font-weight:700;color:#374151;background:#f1f5f9;padding:5px 8px;border-radius:4px;margin-bottom:4px;">'
-        +   '[' + k + '] ' + (perfil?.nombre || k)
-        + '</div>'
-        + '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;">'
-        +   '<thead><tr style="background:#e2e8f0;">'
-        +     '<th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:left;">Descripción</th>'
-        +     '<th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">Largo</th>'
-        +     '<th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">Cant.</th>'
-        +     '<th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">Total mm</th>'
-        +   '</tr></thead>'
-        +   '<tbody>' + rows + '</tbody>'
-        + '</table>'
-        + '</div>';
+      return '<div style="margin-bottom:10px;">'        + '<div style="font-size:10pt;font-weight:700;color:#374151;background:#f1f5f9;padding:5px 8px;border-radius:4px;margin-bottom:4px;">['+k+'] '+(perfil?.nombre || k)+'</div>'        + '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;">'        +   '<thead><tr style="background:#e2e8f0;"><th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:left;">Descripción</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Largo</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Cant.</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Total mm</th></tr></thead>'        +   '<tbody>'+rows+'</tbody>'        + '</table>'        + '</div>';
     }).join('');
-    return '<div style="margin-bottom:24px;page-break-inside:avoid;">'
-      + '<div style="background:#0f172a;color:#fff;padding:8px 12px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center;">'
-      +   '<span style="font-size:11pt;font-weight:700;">' + (idx+1).toString().padStart(2,'0') + '. ' + a.nombre + '</span>'
-      +   '<span style="font-size:9.5pt;opacity:0.8;">' + a.ancho + ' x ' + a.alto + ' mm &nbsp;·&nbsp; ' + cant + ' u.</span>'
-      + '</div>'
-      + '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;padding:12px;">'
-      + filasPerf
-      + '</div>'
-      + '</div>';
+
+    // Herrajes / accesorios
+    const herrajesSnap = tryParse(a.herrajes_snap, []) || [];
+    const herrajesRows = herrajesSnap.length
+      ? herrajesSnap.map(h =>
+          '<tr>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;">'+h.nombre+'</td>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">'+(Number(h.cantidad)*cant)+'</td>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;color:#64748b;">'+(h.unidad||'u.')+'</td>'          + '</tr>'
+        ).join('')
+      : '<tr><td colspan="3" style="padding:5px 8px;border:1px solid #e2e8f0;color:#94a3b8;">Sin herrajes registrados</td></tr>';
+
+    // Vidrios de esta abertura
+    const vids = tryParse(a.vidrios, []) || [];
+    const vidriosRows = vids.length
+      ? vids.map(v =>
+          '<tr>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;">'+v.desc+'</td>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">'+v.ancho+'×'+v.alto+' mm</td>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">'+(v.cant * cant)+'</td>'          + '</tr>'
+        ).join('')
+      : '';
+
+    return '<div style="margin-bottom:24px;page-break-inside:avoid;">'      + '<div style="background:#0f172a;color:#fff;padding:8px 12px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center;">'      +   '<span style="font-size:11pt;font-weight:700;">'+(abIdx+1).toString().padStart(2,'0')+'. '+a.nombre+'</span>'      +   '<span style="font-size:9.5pt;opacity:0.8;">'+a.ancho+' × '+a.alto+' mm &nbsp;·&nbsp; '+cant+' u.</span>'      + '</div>'      + '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;padding:12px;">'      + '<div style="font-size:10pt;font-weight:700;color:#374151;margin-bottom:6px;">Perfiles</div>'      + filasPerf      + (vids.length ? '<div style="font-size:10pt;font-weight:700;color:#374151;margin:10px 0 6px;">Vidrios</div>'        + '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:10px;">'        + '<thead><tr style="background:#e2e8f0;"><th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:left;">Descripción</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Medida</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Cant.</th></tr></thead>'        + '<tbody>'+vidriosRows+'</tbody></table>' : '')      + '<div style="font-size:10pt;font-weight:700;color:#374151;margin-bottom:6px;">Herrajes y accesorios</div>'      + '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;">'      + '<thead><tr style="background:#e2e8f0;"><th style="padding:5px 8px;border:1px solid #e2e8f0;text-align:left;">Herraje</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Cant.</th><th style="padding:5px 8px;border:1px solid #e2e8f0;">Unidad</th></tr></thead>'      + '<tbody>'+herrajesRows+'</tbody></table>'      + '</div>'      + '</div>';
   }).join('');
 
   const fmtFecha = f => {
@@ -4728,31 +4837,32 @@ function imprimirPlanCortes(presupuestoId) {
   <title>Plan de cortes — ${p.cliente}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1a1a1a; padding: 20px; max-width: 900px; margin: 0 auto; }
+    body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1a1a1a; padding: 20px; max-width: 960px; margin: 0 auto; }
     h1 { font-size: 18pt; color: #0f172a; margin-bottom: 4px; }
     h2 { font-size: 13pt; color: #0f172a; border-bottom: 2px solid #0f172a; padding-bottom: 6px; margin: 24px 0 14px; }
-    .meta { font-size: 9.5pt; color: #64748b; margin-bottom: 20px; }
-    @media print {
-      body { padding: 10px; }
-      h2 { page-break-before: auto; }
-      button { display: none !important; }
-    }
+    @media print { body { padding: 10px; } h2 { page-break-before: auto; } button { display: none !important; } }
   </style>
   </head><body>
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
-    <div>
-      <h1>Plan de cortes</h1>
-      <div class="meta">${p.cliente} &nbsp;·&nbsp; ${p.obra || ''} &nbsp;·&nbsp; ${fmtFecha(p.fecha)}</div>
-    </div>
-    <button onclick="window.print()" style="padding:8px 18px;background:#0f172a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:11pt;font-weight:600;">Imprimir / PDF</button>
+    <div><h1>Plan de cortes</h1>
+    <div style="font-size:9.5pt;color:#64748b;margin-top:4px;">${p.cliente} &nbsp;·&nbsp; ${p.obra||''} &nbsp;·&nbsp; ${fmtFecha(p.fecha)}</div></div>
+    <button onclick="window.print()" style="padding:8px 18px;background:#0f172a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:11pt;font-weight:600;">🖨 Imprimir / PDF</button>
   </div>
-  <h2>Cortes consolidados por perfil</h2>
+
+  <h2>📐 Cortes de perfiles</h2>
   ${perfilesHtml}
-  <h2>Detalle por abertura</h2>
+
+  <h2>🪟 Vidrio simple — Placas 1800×2500mm</h2>
+  ${placasHtml}
+
+  ${vidrosDVH.length ? '<h2>🔷 Vidrio DVH — Por unidad</h2>${dvhHtml}' : ''}
+
+  <h2>📋 Detalle por abertura</h2>
   ${detalleHtml}
   </body></html>`);
   win.document.close();
 }
+
 
 function imprimirPresupuesto(id) {
   const p = state.presupuestos.find(x => x.id === id);
