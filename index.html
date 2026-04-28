@@ -4682,64 +4682,79 @@ function imprimirPlanCortes(presupuestoId) {
   // ── 3. Glass bin packing (guillotine strips) ─────────────────────────────
   const PLACA_W = 1800, PLACA_H = 2500;
   function packGlass(pieces) {
-    // Expand by quantity, sort largest area first (FFD heuristic)
+    // Expand by quantity
     const expanded = [];
     for (const pc of pieces) {
       for (let i = 0; i < (pc.cantidad || 1); i++) {
         expanded.push({ ancho: pc.ancho, alto: pc.alto, desc: pc.desc, abertura: pc.abertura });
       }
     }
-    // Sort by max dimension first (better for shelf packing)
-    expanded.sort((a, b) => Math.max(b.ancho,b.alto) - Math.max(a.ancho,a.alto));
+    // Sort largest area first
+    expanded.sort((a, b) => (b.ancho * b.alto) - (a.ancho * a.alto));
 
-    const placas = []; // { piezas, shelves:[{y,maxH,usedW}], usedArea }
+    // Guillotine bin packing
+    // Each placa has a list of free rectangles
+    const placas = [];
+
+    function tryPlace(freeRects, pw, ph) {
+      // Find best free rect (smallest area that fits)
+      let best = null, bestArea = Infinity;
+      for (const r of freeRects) {
+        if (r.w >= pw && r.h >= ph) {
+          const area = r.w * r.h;
+          if (area < bestArea) { bestArea = area; best = r; }
+        }
+      }
+      return best;
+    }
+
+    function splitRect(freeRects, rect, pw, ph) {
+      // Remove used rect, add two new free rects (horizontal split preferred)
+      const idx = freeRects.indexOf(rect);
+      if (idx > -1) freeRects.splice(idx, 1);
+      // Right of placed piece
+      if (rect.w - pw > 0) freeRects.push({ x: rect.x + pw, y: rect.y, w: rect.w - pw, h: ph });
+      // Below placed piece (full width)
+      if (rect.h - ph > 0) freeRects.push({ x: rect.x, y: rect.y + ph, w: rect.w, h: rect.h - ph });
+      // Merge adjacent rects (simplified — just keep all)
+    }
 
     for (const piece of expanded) {
       let pw = piece.ancho, ph = piece.alto;
-      // Try rotation if needed
-      if (pw > PLACA_W || ph > PLACA_H) {
-        if (ph <= PLACA_W && pw <= PLACA_H) { [pw, ph] = [ph, pw]; }
-        else { placas.push({ piezas:[{...piece,ancho:pw,alto:ph,x:0,y:0}], shelves:[{y:ph,maxH:0,usedW:0}], usedArea:pw*ph }); continue; }
-      }
-      // Find best fit across ALL placas and shelves, trying both orientations
-      let bestPlaca = null, bestShelf = null, bestWaste = Infinity;
-      const orientations = [[pw, ph]];
-      if (pw !== ph && ph <= PLACA_W && pw <= PLACA_H) orientations.push([ph, pw]);
-      for (const [ow, oh] of orientations) {
-        for (const placa of placas) {
-          for (const shelf of placa.shelves) {
-            const remaining = PLACA_W - shelf.usedW;
-            if (remaining >= ow && shelf.y + oh <= PLACA_H) {
-              const waste = remaining - ow;
-              if (waste < bestWaste) {
-                bestWaste = waste; bestShelf = shelf; bestPlaca = placa;
-                pw = ow; ph = oh;
-              }
-            }
+      let placed = false;
+
+      // Try both orientations in all existing placas
+      for (const placa of placas) {
+        for (const [ow, oh] of [[pw,ph], (pw!==ph && ph<=PLACA_W && pw<=PLACA_H)?[ph,pw]:null].filter(Boolean)) {
+          const rect = tryPlace(placa.freeRects, ow, oh);
+          if (rect) {
+            placa.piezas.push({ ...piece, ancho: ow, alto: oh, x: rect.x, y: rect.y });
+            placa.usedArea += ow * oh;
+            splitRect(placa.freeRects, rect, ow, oh);
+            placed = true; pw = ow; ph = oh;
+            break;
           }
         }
+        if (placed) break;
       }
 
-      if (bestPlaca && bestShelf) {
-        const x = bestShelf.usedW, y = bestShelf.y;
-        bestPlaca.piezas.push({ ...piece, ancho: pw, alto: ph, x, y });
-        bestShelf.usedW += pw;
-        bestShelf.maxH = Math.max(bestShelf.maxH, ph);
-        // Open new shelf above current if not already exists
-        const newY = bestShelf.y + bestShelf.maxH;
-        if (newY < PLACA_H && !bestPlaca.shelves.find(s => s.y === newY)) {
-          bestPlaca.shelves.push({ y: newY, maxH: 0, usedW: 0 });
-          bestPlaca.shelves.sort((a, b) => a.y - b.y);
+      if (!placed) {
+        // Try rotation for new placa
+        if (pw > PLACA_W || ph > PLACA_H) {
+          if (ph <= PLACA_W && pw <= PLACA_H) [pw, ph] = [ph, pw];
+          else { placas.push({ piezas:[{...piece,ancho:pw,alto:ph,x:0,y:0}], freeRects:[], usedArea:pw*ph }); continue; }
         }
-        bestPlaca.usedArea += pw * ph;
-      } else {
-        // New placa
-        const placa = { piezas: [], shelves: [{ y: 0, maxH: 0, usedW: 0 }], usedArea: 0 };
-        placa.piezas.push({ ...piece, ancho: pw, alto: ph, x: 0, y: 0 });
-        placa.shelves[0].usedW = pw;
-        placa.shelves[0].maxH = ph;
-        if (ph < PLACA_H) placa.shelves.push({ y: ph, maxH: 0, usedW: 0 });
-        placa.usedArea = pw * ph;
+        const placa = {
+          piezas: [],
+          freeRects: [{ x:0, y:0, w:PLACA_W, h:PLACA_H }],
+          usedArea: 0
+        };
+        const rect = tryPlace(placa.freeRects, pw, ph);
+        if (rect) {
+          placa.piezas.push({ ...piece, ancho: pw, alto: ph, x: rect.x, y: rect.y });
+          placa.usedArea = pw * ph;
+          splitRect(placa.freeRects, rect, pw, ph);
+        }
         placas.push(placa);
       }
     }
