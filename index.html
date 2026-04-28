@@ -618,7 +618,7 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
     if (fAncho && fAlto && _Hvid > 0) {
       const vAncho = evalFormula(fAncho, W, _Hvid, N);
       const vAlto  = evalFormula(fAlto,  W, _Hvid, N);
-      vidrios = Array.from({ length: N }, (_, i) => ({ desc: 'Vidrio hoja ' + (i+1) + (tipoVid==='dvh'?' (DVH)':''), ancho: vAncho, alto: vAlto }));
+      vidrios = Array.from({ length: N }, (_, i) => ({ desc: 'Vidrio hoja ' + (i+1) + (tipoVid==='dvh'?' (DVH)':''), ancho: vAncho, alto: vAlto, cant: 1 }));
     } else if (tipo && typeof tipo.vidrios === 'function') {
       vidrios = tipo.vidrios(W, H, params);
     } else {
@@ -4653,7 +4653,7 @@ function imprimirPlanCortes(presupuestoId) {
     const tv = params.tipo_vidrio || 'vcomon';
     const vids = tryParse(a.vidrios, []) || [];
     for (const v of vids) {
-      const entry = { ancho: v.ancho, alto: v.alto, desc: v.desc || '', abertura: a.nombre, cantidad: v.cant * cant };
+      const entry = { ancho: v.ancho, alto: v.alto, desc: v.desc || '', abertura: a.nombre, cantidad: (v.cant || 1) * cant };
       if (tv === 'dvh') vidrosDVH.push(entry);
       else vidriosSimples.push(entry);
     }
@@ -4689,7 +4689,8 @@ function imprimirPlanCortes(presupuestoId) {
         expanded.push({ ancho: pc.ancho, alto: pc.alto, desc: pc.desc, abertura: pc.abertura });
       }
     }
-    expanded.sort((a, b) => (b.ancho * b.alto) - (a.ancho * a.alto));
+    // Sort by max dimension first (better for shelf packing)
+    expanded.sort((a, b) => Math.max(b.ancho,b.alto) - Math.max(a.ancho,a.alto));
 
     const placas = []; // { piezas, shelves:[{y,maxH,usedW}], usedArea }
 
@@ -4700,16 +4701,20 @@ function imprimirPlanCortes(presupuestoId) {
         if (ph <= PLACA_W && pw <= PLACA_H) { [pw, ph] = [ph, pw]; }
         else { placas.push({ piezas:[{...piece,ancho:pw,alto:ph,x:0,y:0}], shelves:[{y:ph,maxH:0,usedW:0}], usedArea:pw*ph }); continue; }
       }
-
-      // Find best fit: shelf with least wasted width, across ALL placas
+      // Find best fit across ALL placas and shelves, trying both orientations
       let bestPlaca = null, bestShelf = null, bestWaste = Infinity;
-      for (const placa of placas) {
-        for (const shelf of placa.shelves) {
-          const remaining = PLACA_W - shelf.usedW;
-          if (remaining >= pw && shelf.y + ph <= PLACA_H) {
-            const waste = remaining - pw;
-            if (waste < bestWaste) {
-              bestWaste = waste; bestShelf = shelf; bestPlaca = placa;
+      const orientations = [[pw, ph]];
+      if (pw !== ph && ph <= PLACA_W && pw <= PLACA_H) orientations.push([ph, pw]);
+      for (const [ow, oh] of orientations) {
+        for (const placa of placas) {
+          for (const shelf of placa.shelves) {
+            const remaining = PLACA_W - shelf.usedW;
+            if (remaining >= ow && shelf.y + oh <= PLACA_H) {
+              const waste = remaining - ow;
+              if (waste < bestWaste) {
+                bestWaste = waste; bestShelf = shelf; bestPlaca = placa;
+                pw = ow; ph = oh;
+              }
             }
           }
         }
@@ -4756,8 +4761,9 @@ function imprimirPlanCortes(presupuestoId) {
       const x = sx(pc.x), y = sy(pc.y), w = Math.max(2, sx(pc.ancho)), h = Math.max(2, sy(pc.alto));
       const cx2 = x + w/2, cy2 = y + h/2;
       const label = pc.ancho + 'x' + pc.alto;
-      const fs = Math.min(10, Math.max(6, Math.floor(w/8)));
-      return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+col+'" stroke="#0369a1" stroke-width="1" rx="1"/>'        + (w > 35 && h > 14 ? '<text x="'+cx2+'" y="'+(cy2+fs/3)+'" text-anchor="middle" font-size="'+fs+'" fill="#1e3a5f" font-family="monospace">'+label+'</text>' : '');
+      const fs = 8;
+      const showLabel = w >= 30 && h >= 12;
+      return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+col+'" stroke="#0369a1" stroke-width="1" rx="1"/>'        + (showLabel ? '<text x="'+cx2+'" y="'+(cy2+3)+'" text-anchor="middle" font-size="'+fs+'" fill="#1e3a5f" font-family="monospace" font-weight="600">'+label+'</text>' : '');
     }).join('');
     return '<div style="display:inline-block;margin:8px;vertical-align:top;">'      + '<div style="font-size:9pt;color:#64748b;margin-bottom:4px;text-align:center;">Placa '+(idx+1)+' &nbsp;·&nbsp; <b style="color:'+(pct>90?'#ef4444':pct>70?'#f59e0b':'#16a34a')+'">'+pct+'% usado</b></div>'      + '<svg width="'+scaleW+'" height="'+scaleH+'" style="border:1.5px solid #94a3b8;border-radius:4px;background:#f0f9ff;">'      + rects      + '</svg>'      + '</div>';
   }
@@ -4818,7 +4824,7 @@ function imprimirPlanCortes(presupuestoId) {
     const vids = tryParse(a.vidrios, []) || [];
     const vidriosRows = vids.length
       ? vids.map(v =>
-          '<tr>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;">'+v.desc+'</td>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">'+v.ancho+'×'+v.alto+' mm</td>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">'+(v.cant * cant)+'</td>'          + '</tr>'
+          '<tr>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;">'+v.desc+'</td>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;">'+v.ancho+'×'+v.alto+' mm</td>'          + '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;">'+((v.cant||1) * cant)+'</td>'          + '</tr>'
         ).join('')
       : '';
 
