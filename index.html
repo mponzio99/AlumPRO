@@ -4688,30 +4688,43 @@ function imprimirPlanCortes(presupuestoId) {
         expanded.push({ ancho: pc.ancho, alto: pc.alto, desc: pc.desc, abertura: pc.abertura });
       }
     }
+    // Sort largest first
     expanded.sort((a, b) => (b.ancho * b.alto) - (a.ancho * a.alto));
+
+    // Oversized pieces (larger than placa) go in their own entry, scaled to fit display
+    const oversized = [];
+    const normal = [];
+    for (const piece of expanded) {
+      let pw = piece.ancho, ph = piece.alto;
+      // Try rotation
+      if ((pw > PLACA_W || ph > PLACA_H) && ph <= PLACA_W && pw <= PLACA_H) [pw, ph] = [ph, pw];
+      if (pw > PLACA_W || ph > PLACA_H) {
+        oversized.push({ ...piece, ancho: pw, alto: ph, x: 0, y: 0, oversized: true });
+      } else {
+        normal.push({ ...piece, ancho: pw, alto: ph });
+      }
+    }
 
     const placas = [];
 
-    for (const piece of expanded) {
+    // Pack normal pieces using shelf algorithm with best-fit
+    for (const piece of normal) {
       let pw = piece.ancho, ph = piece.alto;
 
-      // Handle oversized
-      if (pw > PLACA_W || ph > PLACA_H) {
-        if (ph <= PLACA_W && pw <= PLACA_H) [pw, ph] = [ph, pw];
-        else { placas.push({ piezas:[{...piece,ancho:pw,alto:ph,x:0,y:0}], shelves:[{y:0,usedW:pw,maxH:ph}], usedArea:pw*ph }); continue; }
-      }
-
-      // Best-fit across all placas and shelves, trying both orientations
       let bestPlaca = null, bestShelf = null, bestWaste = Infinity, bestW = pw, bestH = ph;
       for (const [ow, oh] of [[pw,ph], (pw!==ph && ph<=PLACA_W && pw<=PLACA_H)?[ph,pw]:null].filter(Boolean)) {
         for (const placa of placas) {
           for (const shelf of placa.shelves) {
             const remaining = PLACA_W - shelf.usedW;
             if (remaining >= ow && shelf.y + oh <= PLACA_H) {
-              const waste = remaining - ow;
-              if (waste < bestWaste) {
-                bestWaste = waste; bestShelf = shelf; bestPlaca = placa;
-                bestW = ow; bestH = oh;
+              // Also check: can we fit vertically (new shelf below)?
+              const shelfBottom = shelf.y + Math.max(shelf.maxH, oh);
+              if (shelfBottom <= PLACA_H) {
+                const waste = remaining - ow;
+                if (waste < bestWaste) {
+                  bestWaste = waste; bestShelf = shelf; bestPlaca = placa;
+                  bestW = ow; bestH = oh;
+                }
               }
             }
           }
@@ -4730,8 +4743,6 @@ function imprimirPlanCortes(presupuestoId) {
         }
         bestPlaca.usedArea += pw * ph;
       } else {
-        // Try rotation for new placa
-        if (pw > PLACA_W || ph > PLACA_H) [pw, ph] = [ph, pw];
         const placa = { piezas: [], shelves: [{ y: 0, usedW: 0, maxH: 0 }], usedArea: 0 };
         placa.piezas.push({ ...piece, ancho: pw, alto: ph, x: 0, y: 0 });
         placa.shelves[0].usedW = pw;
@@ -4741,6 +4752,12 @@ function imprimirPlanCortes(presupuestoId) {
         placas.push(placa);
       }
     }
+
+    // Add oversized as separate entries
+    for (const piece of oversized) {
+      placas.push({ piezas: [piece], shelves: [], usedArea: piece.ancho * piece.alto, oversized: true });
+    }
+
     return placas;
   }
 
@@ -4748,12 +4765,17 @@ function imprimirPlanCortes(presupuestoId) {
 
   // ── 4. SVG for each placa ────────────────────────────────────────────────
   const COLORS = ['#bfdbfe','#bbf7d0','#fef08a','#fecaca','#e9d5ff','#fed7aa','#cffafe','#d1fae5'];
-  function svgPlaca(placa, idx) {
-    const scaleW = 280, scaleH = Math.round(scaleW * PLACA_H / PLACA_W);
-    const sx = v => Math.round(v * scaleW / PLACA_W);
-    const sy = v => Math.round(v * scaleH / PLACA_H);
-    const _realArea = placa.piezas.reduce((s, pc) => s + pc.ancho * pc.alto, 0);
-    const pct = Math.min(100, Math.round(_realArea / (PLACA_W * PLACA_H) * 100));
+   function svgPlaca(placa, idx) {
+     const scaleW = 280, scaleH = Math.round(scaleW * PLACA_H / PLACA_W);
+     // For oversized pieces: scale to fit the piece dimensions
+     const maxPW = Math.max(...placa.piezas.map(p => p.x + p.ancho));
+     const maxPH = Math.max(...placa.piezas.map(p => p.y + p.alto));
+     const refW = placa.oversized ? maxPW : PLACA_W;
+     const refH = placa.oversized ? maxPH : PLACA_H;
+     const sx = v => Math.round(v * scaleW / refW);
+     const sy = v => Math.round(v * scaleH / refH);
+     const _realArea = placa.piezas.reduce((s, pc) => s + pc.ancho * pc.alto, 0);
+     const pct = placa.oversized ? 100 : Math.min(100, Math.round(_realArea / (PLACA_W * PLACA_H) * 100));
     let rects = placa.piezas.map((pc, i) => {
       const col = COLORS[i % COLORS.length];
       const x = sx(pc.x), y = sy(pc.y), w = Math.max(2, sx(pc.ancho)), h = Math.max(2, sy(pc.alto));
@@ -4770,7 +4792,7 @@ function imprimirPlanCortes(presupuestoId) {
           ? '<rect x="'+(tx-bgW/2)+'" y="'+(ty-fs)+'" width="'+bgW+'" height="'+bgH+'" fill="white" opacity="0.85" rx="2"/>'            + '<text x="'+tx+'" y="'+ty+'" text-anchor="middle" dominant-baseline="auto" font-size="'+fs+'" fill="#0f172a" font-family="monospace" font-weight="700">'+label+'</text>'
           : '');
     }).join('');
-    return '<div style="display:inline-block;margin:8px;vertical-align:top;">'      + '<div style="font-size:9pt;color:#64748b;margin-bottom:4px;text-align:center;">Placa '+(idx+1)+' &nbsp;·&nbsp; <b style="color:'+(pct>90?'#ef4444':pct>70?'#f59e0b':'#16a34a')+'">'+pct+'% usado</b></div>'      + '<svg width="'+scaleW+'" height="'+scaleH+'" viewBox="0 0 '+scaleW+' '+scaleH+'" style="border:1.5px solid #94a3b8;border-radius:4px;background:#f0f9ff;overflow:visible;">'      + rects      + '</svg>'      + '</div>';
+    return '<div style="display:inline-block;margin:8px;vertical-align:top;">'      + '<div style="font-size:9pt;color:#64748b;margin-bottom:4px;text-align:center;">'+(placa.oversized?'⚠ Fuera de placa':'Placa '+(idx+1))+' &nbsp;·&nbsp; <b style="color:'+(placa.oversized?'#ef4444':pct>90?'#ef4444':pct>70?'#f59e0b':'#16a34a')+'">'+(placa.oversized?placa.piezas[0].ancho+'×'+placa.piezas[0].alto+'mm':pct+'% usado')+'</b></div>'      + '<svg width="'+scaleW+'" height="'+scaleH+'" viewBox="0 0 '+scaleW+' '+scaleH+'" style="border:1.5px solid #94a3b8;border-radius:4px;background:#f0f9ff;overflow:visible;">'      + rects      + '</svg>'      + '</div>';
   }
 
   const placasHtml = placasSimples.length
