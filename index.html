@@ -4776,11 +4776,19 @@ function imprimirPlanCortes(presupuestoId) {
       const x = sx(pc.x), y = sy(pc.y), w = Math.max(2, sx(pc.ancho)), h = Math.max(2, sy(pc.alto));
       const cx2 = x + w/2, cy2 = y + h/2;
       const label = pc.ancho + 'x' + pc.alto;
-      const fs = 8;
-      const showLabel = w >= 30 && h >= 12;
-      return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+col+'" stroke="#0369a1" stroke-width="1" rx="1"/>'        + (showLabel ? '<text x="'+cx2+'" y="'+(cy2+3)+'" text-anchor="middle" font-size="'+fs+'" fill="#1e3a5f" font-family="monospace" font-weight="600">'+label+'</text>' : '');
+      // Scale font size with piece size, min 8 max 14
+      const fs = Math.min(14, Math.max(8, Math.floor(Math.min(w,h) / 12)));
+      const showLabel = w >= 20 && h >= 10;
+      // Ensure text stays inside piece — clamp cx2/cy2 to piece bounds
+      const tx = Math.min(Math.max(cx2, x+2), x+w-2);
+      const ty = Math.min(Math.max(cy2+3, y+fs+2), y+h-2);
+      return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+col+'" stroke="#0369a1" stroke-width="1" rx="1"/>'
+        + (showLabel
+            ? '<rect x="'+(tx-label.length*fs*0.31)+'" y="'+(ty-fs-1)+'" width="'+(label.length*fs*0.62)+'" height="'+(fs+4)+'" fill="rgba(255,255,255,0.7)" rx="2"/>'
+              + '<text x="'+tx+'" y="'+ty+'" text-anchor="middle" font-size="'+fs+'" fill="#0f172a" font-family="monospace" font-weight="700">'+label+'</text>'
+            : '');
     }).join('');
-    return '<div style="display:inline-block;margin:8px;vertical-align:top;">'      + '<div style="font-size:9pt;color:#64748b;margin-bottom:4px;text-align:center;">Placa '+(idx+1)+' &nbsp;·&nbsp; <b style="color:'+(pct>90?'#ef4444':pct>70?'#f59e0b':'#16a34a')+'">'+pct+'% usado</b></div>'      + '<svg width="'+scaleW+'" height="'+scaleH+'" style="border:1.5px solid #94a3b8;border-radius:4px;background:#f0f9ff;">'      + rects      + '</svg>'      + '</div>';
+    return '<div style="display:inline-block;margin:8px;vertical-align:top;">'      + '<div style="font-size:9pt;color:#64748b;margin-bottom:4px;text-align:center;">Placa '+(idx+1)+' &nbsp;·&nbsp; <b style="color:'+(pct>90?'#ef4444':pct>70?'#f59e0b':'#16a34a')+'">'+pct+'% usado</b></div>'      + '<svg width="'+scaleW+'" height="'+scaleH+'" viewBox="0 0 '+scaleW+' '+scaleH+'" style="border:1.5px solid #94a3b8;border-radius:4px;background:#f0f9ff;overflow:visible;">'      + rects      + '</svg>'      + '</div>';
   }
 
   const placasHtml = placasSimples.length
