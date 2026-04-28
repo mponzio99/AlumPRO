@@ -4682,79 +4682,62 @@ function imprimirPlanCortes(presupuestoId) {
   // ── 3. Glass bin packing (guillotine strips) ─────────────────────────────
   const PLACA_W = 1800, PLACA_H = 2500;
   function packGlass(pieces) {
-    // Expand by quantity
     const expanded = [];
     for (const pc of pieces) {
       for (let i = 0; i < (pc.cantidad || 1); i++) {
         expanded.push({ ancho: pc.ancho, alto: pc.alto, desc: pc.desc, abertura: pc.abertura });
       }
     }
-    // Sort largest area first
     expanded.sort((a, b) => (b.ancho * b.alto) - (a.ancho * a.alto));
 
-    // Guillotine bin packing
-    // Each placa has a list of free rectangles
     const placas = [];
-
-    function tryPlace(freeRects, pw, ph) {
-      // Find best free rect (smallest area that fits)
-      let best = null, bestArea = Infinity;
-      for (const r of freeRects) {
-        if (r.w >= pw && r.h >= ph) {
-          const area = r.w * r.h;
-          if (area < bestArea) { bestArea = area; best = r; }
-        }
-      }
-      return best;
-    }
-
-    function splitRect(freeRects, rect, pw, ph) {
-      // Remove used rect, add two new free rects (horizontal split preferred)
-      const idx = freeRects.indexOf(rect);
-      if (idx > -1) freeRects.splice(idx, 1);
-      // Right of placed piece
-      if (rect.w - pw > 0) freeRects.push({ x: rect.x + pw, y: rect.y, w: rect.w - pw, h: ph });
-      // Below placed piece (full width)
-      if (rect.h - ph > 0) freeRects.push({ x: rect.x, y: rect.y + ph, w: rect.w, h: rect.h - ph });
-      // Merge adjacent rects (simplified — just keep all)
-    }
 
     for (const piece of expanded) {
       let pw = piece.ancho, ph = piece.alto;
-      let placed = false;
 
-      // Try both orientations in all existing placas
-      for (const placa of placas) {
-        for (const [ow, oh] of [[pw,ph], (pw!==ph && ph<=PLACA_W && pw<=PLACA_H)?[ph,pw]:null].filter(Boolean)) {
-          const rect = tryPlace(placa.freeRects, ow, oh);
-          if (rect) {
-            placa.piezas.push({ ...piece, ancho: ow, alto: oh, x: rect.x, y: rect.y });
-            placa.usedArea += ow * oh;
-            splitRect(placa.freeRects, rect, ow, oh);
-            placed = true; pw = ow; ph = oh;
-            break;
-          }
-        }
-        if (placed) break;
+      // Handle oversized
+      if (pw > PLACA_W || ph > PLACA_H) {
+        if (ph <= PLACA_W && pw <= PLACA_H) [pw, ph] = [ph, pw];
+        else { placas.push({ piezas:[{...piece,ancho:pw,alto:ph,x:0,y:0}], shelves:[{y:0,usedW:pw,maxH:ph}], usedArea:pw*ph }); continue; }
       }
 
-      if (!placed) {
+      // Best-fit across all placas and shelves, trying both orientations
+      let bestPlaca = null, bestShelf = null, bestWaste = Infinity, bestW = pw, bestH = ph;
+      for (const [ow, oh] of [[pw,ph], (pw!==ph && ph<=PLACA_W && pw<=PLACA_H)?[ph,pw]:null].filter(Boolean)) {
+        for (const placa of placas) {
+          for (const shelf of placa.shelves) {
+            const remaining = PLACA_W - shelf.usedW;
+            if (remaining >= ow && shelf.y + oh <= PLACA_H) {
+              const waste = remaining - ow;
+              if (waste < bestWaste) {
+                bestWaste = waste; bestShelf = shelf; bestPlaca = placa;
+                bestW = ow; bestH = oh;
+              }
+            }
+          }
+        }
+      }
+
+      if (bestPlaca && bestShelf) {
+        pw = bestW; ph = bestH;
+        bestPlaca.piezas.push({ ...piece, ancho: pw, alto: ph, x: bestShelf.usedW, y: bestShelf.y });
+        bestShelf.usedW += pw;
+        bestShelf.maxH = Math.max(bestShelf.maxH, ph);
+        const newY = bestShelf.y + bestShelf.maxH;
+        if (newY < PLACA_H && !bestPlaca.shelves.find(s => s.y === newY)) {
+          bestPlaca.shelves.push({ y: newY, usedW: 0, maxH: 0 });
+          bestPlaca.shelves.sort((a, b) => a.y - b.y);
+        }
+        bestPlaca.usedArea += pw * ph;
+      } else {
         // Try rotation for new placa
-        if (pw > PLACA_W || ph > PLACA_H) {
-          if (ph <= PLACA_W && pw <= PLACA_H) [pw, ph] = [ph, pw];
-          else { placas.push({ piezas:[{...piece,ancho:pw,alto:ph,x:0,y:0}], freeRects:[], usedArea:pw*ph }); continue; }
-        }
-        const placa = {
-          piezas: [],
-          freeRects: [{ x:0, y:0, w:PLACA_W, h:PLACA_H }],
-          usedArea: 0
-        };
-        const rect = tryPlace(placa.freeRects, pw, ph);
-        if (rect) {
-          placa.piezas.push({ ...piece, ancho: pw, alto: ph, x: rect.x, y: rect.y });
-          placa.usedArea = pw * ph;
-          splitRect(placa.freeRects, rect, pw, ph);
-        }
+        if (pw > PLACA_W || ph > PLACA_H) [pw, ph] = [ph, pw];
+        const placa = { piezas: [], shelves: [{ y: 0, usedW: 0, maxH: 0 }], usedArea: 0 };
+        placa.piezas.push({ ...piece, ancho: pw, alto: ph, x: 0, y: 0 });
+        placa.shelves[0].usedW = pw;
+        placa.shelves[0].maxH = ph;
+        if (ph < PLACA_H) placa.shelves.push({ y: ph, usedW: 0, maxH: 0 });
+        placa.usedArea = pw * ph;
         placas.push(placa);
       }
     }
@@ -4776,17 +4759,16 @@ function imprimirPlanCortes(presupuestoId) {
       const x = sx(pc.x), y = sy(pc.y), w = Math.max(2, sx(pc.ancho)), h = Math.max(2, sy(pc.alto));
       const cx2 = x + w/2, cy2 = y + h/2;
       const label = pc.ancho + 'x' + pc.alto;
-      // Scale font size with piece size, min 8 max 14
-      const fs = Math.min(14, Math.max(8, Math.floor(Math.min(w,h) / 12)));
-      const showLabel = w >= 20 && h >= 10;
-      // Ensure text stays inside piece — clamp cx2/cy2 to piece bounds
-      const tx = Math.min(Math.max(cx2, x+2), x+w-2);
-      const ty = Math.min(Math.max(cy2+3, y+fs+2), y+h-2);
-      return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+col+'" stroke="#0369a1" stroke-width="1" rx="1"/>'
-        + (showLabel
-            ? '<rect x="'+(tx-label.length*fs*0.31)+'" y="'+(ty-fs-1)+'" width="'+(label.length*fs*0.62)+'" height="'+(fs+4)+'" fill="rgba(255,255,255,0.7)" rx="2"/>'
-              + '<text x="'+tx+'" y="'+ty+'" text-anchor="middle" font-size="'+fs+'" fill="#0f172a" font-family="monospace" font-weight="700">'+label+'</text>'
-            : '');
+      const fs = Math.min(12, Math.max(8, Math.floor(Math.min(w,h) / 10)));
+      const showLabel = w >= 24 && h >= 14;
+      // Center of piece, clamped inside
+      const tx = Math.round(Math.min(Math.max(cx2, x + fs*label.length*0.32 + 2), x + w - fs*label.length*0.32 - 2));
+      const ty = Math.round(Math.min(Math.max(cy2 + fs*0.4, y + fs + 2), y + h - 3));
+      const bgW = Math.round(label.length * fs * 0.63 + 6);
+      const bgH = fs + 5;
+      return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+col+'" stroke="#0369a1" stroke-width="1" rx="2"/>'        + (showLabel
+          ? '<rect x="'+(tx-bgW/2)+'" y="'+(ty-fs)+'" width="'+bgW+'" height="'+bgH+'" fill="white" opacity="0.85" rx="2"/>'            + '<text x="'+tx+'" y="'+ty+'" text-anchor="middle" dominant-baseline="auto" font-size="'+fs+'" fill="#0f172a" font-family="monospace" font-weight="700">'+label+'</text>'
+          : '');
     }).join('');
     return '<div style="display:inline-block;margin:8px;vertical-align:top;">'      + '<div style="font-size:9pt;color:#64748b;margin-bottom:4px;text-align:center;">Placa '+(idx+1)+' &nbsp;·&nbsp; <b style="color:'+(pct>90?'#ef4444':pct>70?'#f59e0b':'#16a34a')+'">'+pct+'% usado</b></div>'      + '<svg width="'+scaleW+'" height="'+scaleH+'" viewBox="0 0 '+scaleW+' '+scaleH+'" style="border:1.5px solid #94a3b8;border-radius:4px;background:#f0f9ff;overflow:visible;">'      + rects      + '</svg>'      + '</div>';
   }
