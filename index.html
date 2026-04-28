@@ -613,9 +613,9 @@ function calcularAbertura(linea_id, tipo_id, W, H, params, perfilesDB, herrajesD
     const fAlto = tipoVid === 'dvh'
       ? (v.formula_alto_dvh || v.formula_alto_vcomon || v.formula_alto || '')
       : (v.formula_alto_vcomon || v.formula_alto || '');
-    if (fAncho && fAlto) {
-      const _pctTabAb = Number(params?.pct_tablillas) || 0;
-      const _Hvid = _pctTabAb > 0 ? Math.round(H * (1 - _pctTabAb/100)) : H;
+    const _pctTabAb = Number(params?.pct_tablillas) || 0;
+    const _Hvid = Math.max(0, _pctTabAb > 0 ? Math.round(H * (1 - _pctTabAb/100)) : H);
+    if (fAncho && fAlto && _Hvid > 0) {
       const vAncho = evalFormula(fAncho, W, _Hvid, N);
       const vAlto  = evalFormula(fAlto,  W, _Hvid, N);
       vidrios = Array.from({ length: N }, (_, i) => ({ desc: 'Vidrio hoja ' + (i+1) + (tipoVid==='dvh'?' (DVH)':''), ancho: vAncho, alto: vAlto }));
@@ -733,7 +733,9 @@ function calcularVidriosModulo(a) {
       ? (v.formula_alto_dvh  || v.formula_alto_vcomon  || v.formula_alto  || '')
       : (v.formula_alto_vcomon  || v.formula_alto  || '');
     if (!fA || !fH) continue;
-    const altoSec = Number(sec.alto) || alto;
+    const _altoRaw = Number(sec.alto) || alto;
+    const altoSec = Math.max(0, _altoRaw);
+    if (altoSec <= 0) continue;
     const vA = evalFormula(fA, Number(sec.ancho), altoSec, N);
     const vH = evalFormula(fH, Number(sec.ancho), altoSec, N);
     const precioVid = tv === 'dvh'
@@ -934,10 +936,14 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
           if (fA && fH) {
             // If tablillas active, vidrio zone is reduced
             const _pctTabA = Number(params_a.pct_tablillas) || 0;
-            const _HvidA = _pctTabA > 0 ? Math.round(Number(a.alto) * (1 - _pctTabA/100)) : Number(a.alto);
-            const vA = evalFormula(fA, Number(a.ancho), _HvidA, N_a);
-            const vH = evalFormula(fH, Number(a.ancho), _HvidA, N_a);
-            vidriosArr = Array.from({length: N_a}, (_,i) => ({ ancho: vA, alto: vH, desc: 'Vidrio hoja '+(i+1) }));
+            const _HvidA = Math.max(0, _pctTabA > 0 ? Math.round(Number(a.alto) * (1 - _pctTabA/100)) : Number(a.alto));
+            if (_HvidA > 0) {
+              const vA = evalFormula(fA, Number(a.ancho), _HvidA, N_a);
+              const vH = evalFormula(fH, Number(a.ancho), _HvidA, N_a);
+              if (vA > 0 && vH > 0) {
+                vidriosArr = Array.from({length: N_a}, (_,i) => ({ ancho: vA, alto: vH, desc: 'Vidrio hoja '+(i+1) }));
+              }
+            }
           }
         }
       }
@@ -4676,7 +4682,7 @@ function imprimirPlanCortes(presupuestoId) {
   // ── 3. Glass bin packing (guillotine strips) ─────────────────────────────
   const PLACA_W = 1800, PLACA_H = 2500;
   function packGlass(pieces) {
-    // Expand pieces by quantity, sort largest first
+    // Expand by quantity, sort largest area first (FFD heuristic)
     const expanded = [];
     for (const pc of pieces) {
       for (let i = 0; i < (pc.cantidad || 1); i++) {
@@ -4684,57 +4690,52 @@ function imprimirPlanCortes(presupuestoId) {
       }
     }
     expanded.sort((a, b) => (b.ancho * b.alto) - (a.ancho * a.alto));
-    
-    const placas = []; // each: { piezas: [{ancho,alto,x,y,desc,abertura}], usedArea }
-    
+
+    const placas = []; // { piezas, shelves:[{y,maxH,usedW}], usedArea }
+
     for (const piece of expanded) {
-      if (piece.ancho > PLACA_W || piece.alto > PLACA_H) {
-        // Oversized — try rotated
-        if (piece.alto <= PLACA_W && piece.ancho <= PLACA_H) {
-          [piece.ancho, piece.alto] = [piece.alto, piece.ancho];
-        } else {
-          // Too large for any placa — add solo
-          placas.push({ piezas: [{ ...piece, x: 0, y: 0 }], usedArea: piece.ancho * piece.alto });
-          continue;
-        }
+      let pw = piece.ancho, ph = piece.alto;
+      // Try rotation if needed
+      if (pw > PLACA_W || ph > PLACA_H) {
+        if (ph <= PLACA_W && pw <= PLACA_H) { [pw, ph] = [ph, pw]; }
+        else { placas.push({ piezas:[{...piece,ancho:pw,alto:ph,x:0,y:0}], shelves:[{y:ph,maxH:0,usedW:0}], usedArea:pw*ph }); continue; }
       }
-      // Try to fit in existing placas using shelf algorithm
-      let placed = false;
+
+      // Find best fit: shelf with least wasted width, across ALL placas
+      let bestPlaca = null, bestShelf = null, bestWaste = Infinity;
       for (const placa of placas) {
-        // Find lowest shelf position
-        let bestX = 0, bestY = PLACA_H, bestShelf = null;
-        // Simple shelf packing: track shelf heights
-        if (!placa.shelves) placa.shelves = [{ y: 0, maxH: 0, usedW: 0 }];
         for (const shelf of placa.shelves) {
-          if (shelf.usedW + piece.ancho <= PLACA_W && shelf.y + piece.alto <= PLACA_H) {
-            if (shelf.y < bestY) {
-              bestY = shelf.y; bestX = shelf.usedW; bestShelf = shelf;
+          const remaining = PLACA_W - shelf.usedW;
+          if (remaining >= pw && shelf.y + ph <= PLACA_H) {
+            const waste = remaining - pw;
+            if (waste < bestWaste) {
+              bestWaste = waste; bestShelf = shelf; bestPlaca = placa;
             }
           }
         }
-        if (bestShelf) {
-          placa.piezas.push({ ...piece, x: bestX, y: bestY });
-          bestShelf.usedW += piece.ancho;
-          bestShelf.maxH = Math.max(bestShelf.maxH, piece.alto);
-          // Open new shelf if needed
-          const newShelfY = bestShelf.y + bestShelf.maxH;
-          if (!placa.shelves.find(s => s.y === newShelfY) && newShelfY < PLACA_H) {
-            placa.shelves.push({ y: newShelfY, maxH: 0, usedW: 0 });
-          }
-          placa.usedArea += piece.ancho * piece.alto;
-          placed = true;
-          break;
-        }
       }
-      if (!placed) {
-        const newPlaca = { piezas: [], shelves: [{ y: 0, maxH: 0, usedW: 0 }], usedArea: 0 };
-        const shelf = newPlaca.shelves[0];
-        newPlaca.piezas.push({ ...piece, x: 0, y: 0 });
-        shelf.usedW = piece.ancho;
-        shelf.maxH = piece.alto;
-        if (piece.alto < PLACA_H) newPlaca.shelves.push({ y: piece.alto, maxH: 0, usedW: 0 });
-        newPlaca.usedArea = piece.ancho * piece.alto;
-        placas.push(newPlaca);
+
+      if (bestPlaca && bestShelf) {
+        const x = bestShelf.usedW, y = bestShelf.y;
+        bestPlaca.piezas.push({ ...piece, ancho: pw, alto: ph, x, y });
+        bestShelf.usedW += pw;
+        bestShelf.maxH = Math.max(bestShelf.maxH, ph);
+        // Open new shelf above current if not already exists
+        const newY = bestShelf.y + bestShelf.maxH;
+        if (newY < PLACA_H && !bestPlaca.shelves.find(s => s.y === newY)) {
+          bestPlaca.shelves.push({ y: newY, maxH: 0, usedW: 0 });
+          bestPlaca.shelves.sort((a, b) => a.y - b.y);
+        }
+        bestPlaca.usedArea += pw * ph;
+      } else {
+        // New placa
+        const placa = { piezas: [], shelves: [{ y: 0, maxH: 0, usedW: 0 }], usedArea: 0 };
+        placa.piezas.push({ ...piece, ancho: pw, alto: ph, x: 0, y: 0 });
+        placa.shelves[0].usedW = pw;
+        placa.shelves[0].maxH = ph;
+        if (ph < PLACA_H) placa.shelves.push({ y: ph, maxH: 0, usedW: 0 });
+        placa.usedArea = pw * ph;
+        placas.push(placa);
       }
     }
     return placas;
@@ -4748,7 +4749,8 @@ function imprimirPlanCortes(presupuestoId) {
     const scaleW = 280, scaleH = Math.round(scaleW * PLACA_H / PLACA_W);
     const sx = v => Math.round(v * scaleW / PLACA_W);
     const sy = v => Math.round(v * scaleH / PLACA_H);
-    const pct = Math.round(placa.usedArea / (PLACA_W * PLACA_H) * 100);
+    const _realArea = placa.piezas.reduce((s, pc) => s + pc.ancho * pc.alto, 0);
+    const pct = Math.min(100, Math.round(_realArea / (PLACA_W * PLACA_H) * 100));
     let rects = placa.piezas.map((pc, i) => {
       const col = COLORS[i % COLORS.length];
       const x = sx(pc.x), y = sy(pc.y), w = Math.max(2, sx(pc.ancho)), h = Math.max(2, sy(pc.alto));
