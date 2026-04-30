@@ -213,8 +213,8 @@ async function init() {
 
     const markup = Number(p.markup||0);
 
-    // Use saved total_final if available (matches criterio_precio used in app)
-    // Otherwise calculate from abertura costs
+    // Recalculate total from stored per-abertura costs
+    // (stored costs already include cant multiplication from bin packing)
     let subtotal = 0;
     abs.forEach(a => {
       const cp = parseFloat(a.costo_perfiles) || 0;
@@ -222,10 +222,7 @@ async function init() {
       const ch = parseFloat(a.costo_herrajes) || 0;
       subtotal += cp + cv + ch;
     });
-    // Use p.total_final if it's valid (saved by app with correct criterio)
-    const totalFinal = (p.total_final && !isNaN(parseFloat(p.total_final)))
-      ? parseFloat(p.total_final)
-      : subtotal * (1 + markup/100);
+    const totalFinal = subtotal * (1 + markup/100);
 
     // Build aberturas HTML
     // Distribute total_final proportionally across aberturas by their cost ratio
@@ -237,9 +234,9 @@ async function init() {
     const aberturasHtml = abs.map((a, i) => {
       const costoAb = _costosPorAb[i];
       const cantA = Number(a.cantidad) || 1;
-      // Distribute total_final by cost ratio — avoids stale per-abertura costs
-      const fraccion = _costosTotalSum > 0 ? costoAb / _costosTotalSum : (1 / abs.length);
-      const precioTotal = totalFinal * fraccion;
+      // Per-abertura price = its own cost * (1 + markup)
+      // costoAb already includes cant from bin packing, so precioTotal is for all units
+      const precioTotal = costoAb * (1 + markup/100);
       const precioUnit = precioTotal / cantA;
 
       const svgContent = a.es_modulo
@@ -259,7 +256,11 @@ async function init() {
         ? '<span class="badge" style="background:#00E5A022;color:#00b37e;">MÓDULO</span>'
         : '';
       const dvhbadge = !a.es_modulo && a.params
-        ? (() => { try { const prms = typeof a.params==='object' ? a.params : JSON.parse(a.params||'{}'); return prms.tipo_vidrio==='dvh' ? '<span class="badge" style="background:#00E5A022;color:#00b37e;">DVH</span>' : ''; } catch{ return ''; } })()
+        ? (() => { try {
+            const prms = typeof a.params==='object' ? a.params : JSON.parse(a.params||'{}');
+            if (prms.subtipo_vidrio_nombre) return '<span class="badge" style="background:#f0fdf4;color:#15803d;">' + prms.subtipo_vidrio_nombre + '</span>';
+            return prms.tipo_vidrio==='dvh' ? '<span class="badge" style="background:#00E5A022;color:#00b37e;">DVH</span>' : '';
+          } catch{ return ''; } })()
         : '';
       const colorbadge = p.color_al ? '<span class="badge" style="background:#e0f2fe;color:#0369a1;">' + p.color_al + '</span>' : '';
 
@@ -279,7 +280,7 @@ async function init() {
         + '</div>'
         + '<div class="abertura-precio">'
           + '<div class="total">' + fmt(precioTotal) + '</div>'
-          + '<div class="num">' + String(i+1).padStart(2,'0') + '</div>'
+
         + '</div>'
         + '</div>';
     }).join('');
