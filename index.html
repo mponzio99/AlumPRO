@@ -356,6 +356,7 @@ let state = {
   herrajes: [],
   stock: [],
   precios_kg: [],
+  tipos_vidrio: [], // [{ id, nombre, tipo_base: 'vcomon'|'dvh', precio }]
   config_tipologias: {},
   tipologias_custom: [], // { id, linea_id, nombre, con_hojas, hojas_min, hojas_max, hojas_default }
   umbral_sobrante: 20, // % máximo de sobrante que se cobra (default 20%)
@@ -1187,6 +1188,12 @@ async function loadAll() {
     // Restaurar config de tipologías guardada
     state.config_tipologias = {};
     state.tipologias_custom = [];
+    // Load tipos_vidrio from config
+    const tvRow = configRows.find(r => r.key === 'tipos_vidrio');
+    state.tipos_vidrio = tvRow ? (tryParse(tvRow.value, []) || []) : [
+      { id: 'tv1', nombre: 'Vidrio común 4mm', tipo_base: 'vcomon', precio: 8500 },
+      { id: 'tv2', nombre: 'DVH 4+9+4',        tipo_base: 'dvh',    precio: 15000 },
+    ];
     for (const row of configRows) {
       if (row.key && row.key.startsWith('tipologia_custom_meta__')) {
         // Metadatos de tipología custom: { id, linea_id, nombre, con_hojas, hojas_min, hojas_max, hojas_default }
@@ -1468,7 +1475,10 @@ function renderDetalle() {
       const herrajesHtml = herrajesEditables.map(function(h, hi) {
         return _renderHerrajeRow(a.id, a.linea_id, a.cantidad, h, hi);
       }).join('');
-      const tvBadge = tryParse(a.params,{}).tipo_vidrio==='dvh' ? ' · <span style="color:var(--accent);font-size:11px;">DVH</span>' : '';
+      const _abParams = tryParse(a.params,{});
+      const tvBadge = _abParams.subtipo_vidrio_nombre
+        ? ' · <span style="color:#0ea5e9;font-size:11px;">'+_abParams.subtipo_vidrio_nombre+'</span>'
+        : _abParams.tipo_vidrio==='dvh' ? ' · <span style="color:var(--accent);font-size:11px;">DVH</span>' : '';
 
       return `
       <div class="ab-card" style="flex-direction:column;gap:10px;">
@@ -2139,6 +2149,30 @@ function renderConfig() {
     <button class="btn-secondary" style="margin-top:12px" onclick="showModalPrecioKg()">+ Agregar color / precio</button>
   </div>
 
+  <div class="config-section">
+    <div class="config-title">Tipos de vidrio</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nombre</th><th>Tipo base</th><th style="text-align:right;">Precio $/m²</th><th>Acciones</th></tr></thead>
+        <tbody>
+          ${(state.tipos_vidrio||[]).map((tv,i) => {
+            const eid = tv.id.replace(/'/g,"\'");
+            return '<tr>'
+              + '<td><input value="'+tv.nombre+'" style="background:transparent;border:none;color:var(--text);width:180px;" onchange="editarTipoVidrio(this.closest(\'tr\').dataset.id,\'nombre\',this.value)" data-id="'+tv.id+'"></td>'
+              + '<td><select data-id="'+tv.id+'" onchange="editarTipoVidrio(this.dataset.id,\'tipo_base\',this.value)">'
+              +   '<option value="vcomon"'+(tv.tipo_base==='vcomon'?' selected':'')+'>V. Común</option>'
+              +   '<option value="dvh"'+(tv.tipo_base==='dvh'?' selected':'')+'>DVH</option>'
+              + '</select></td>'
+              + '<td><input type="number" value="'+tv.precio+'" data-id="'+tv.id+'" style="background:transparent;border:none;color:var(--text);width:90px;text-align:right;font-family:monospace;" onchange="editarTipoVidrio(this.dataset.id,\'precio\',Number(this.value))"></td>'
+              + '<td><button data-id="'+tv.id+'" onclick="eliminarTipoVidrio(this.dataset.id)" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:12px;">✕</button></td>'
+              + '</tr>';
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <button class="btn-secondary" style="margin-top:12px" onclick="agregarTipoVidrio()">+ Agregar tipo de vidrio</button>
+  </div>
+
   <div id="cfg-lineas" class="config-section">
     <div class="config-title">Lineas de abertura</div>
     <div class="table-wrap">
@@ -2286,6 +2320,42 @@ function updateConfigVidrio(linea_id, tipo_id, campo, valor) {
   cfg.vidrio[campo] = valor;
   saveConfigTipo(linea_id, tipo_id);
   toast('Guardado');
+}
+
+
+function _saveTiposVidrio() {
+  const val = JSON.stringify(state.tipos_vidrio);
+  const existing = state._rawConfig?.find(r => r.key === 'tipos_vidrio');
+  if (existing) {
+    sheetsUpdateRow(SHEETS.config, existing.id, { value: val }).catch(() => {});
+    existing.value = val;
+  } else {
+    const row = { id: genId(), key: 'tipos_vidrio', value: val };
+    sheetsAppend(SHEETS.config, row).catch(() => {});
+    if (!state._rawConfig) state._rawConfig = [];
+    state._rawConfig.push(row);
+  }
+}
+
+function agregarTipoVidrio() {
+  if (!state.tipos_vidrio) state.tipos_vidrio = [];
+  state.tipos_vidrio.push({ id: genId(), nombre: 'Nuevo tipo', tipo_base: 'vcomon', precio: 8500 });
+  _saveTiposVidrio();
+  render();
+}
+
+function editarTipoVidrio(id, campo, valor) {
+  const tv = state.tipos_vidrio?.find(t => t.id === id);
+  if (!tv) return;
+  tv[campo] = valor;
+  _saveTiposVidrio();
+  toast('Guardado');
+}
+
+function eliminarTipoVidrio(id) {
+  state.tipos_vidrio = (state.tipos_vidrio || []).filter(t => t.id !== id);
+  _saveTiposVidrio();
+  render();
 }
 
 function updateConfigPremarco(linea_id, campo, valor) {
@@ -3411,15 +3481,23 @@ function updatePrecioKg() {
 function updatePrecioVidrio() {
   const linea_id = document.getElementById('m_linea')?.value;
   const tipoId   = document.getElementById('m_tipo')?.value;
-  const tv = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
+  const subtipoId = document.getElementById('m_subtipo_vidrio')?.value;
+  const subtipo = state.tipos_vidrio?.find(t => t.id === subtipoId);
+  const tv = subtipo?.tipo_base || subtipoId || 'vcomon';
   const input = document.getElementById('m_pvid');
   if (!linea_id || !tipoId || !input) return;
+  // Load price from subtipo first, fallback to tipologia config
+  if (subtipo && !input.dataset.userModified) {
+    input.value = subtipo.precio;
+  }
   const cfg = getConfigTipo(linea_id, tipoId);
   if (!cfg || !cfg.vidrio) return;
-  const precio = tv === 'dvh'
-    ? (cfg.vidrio.precio_dvh || cfg.vidrio.precio_vcomon || null)
-    : (cfg.vidrio.precio_vcomon || null);
-  if (precio) input.value = precio;
+  if (!subtipo) {
+    const precio = tv === 'dvh'
+      ? (cfg.vidrio.precio_dvh || cfg.vidrio.precio_vcomon || null)
+      : (cfg.vidrio.precio_vcomon || null);
+    if (precio && !input.dataset.userModified) input.value = precio;
+  }
 }
 
 async function crearPresupuesto() {
@@ -3883,14 +3961,9 @@ function showAddAbertura() {
     </div>
     <div class="form-group">
       <label>Tipo de vidrio</label>
-      <div style="display:flex;gap:8px;margin-top:4px;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;text-transform:none;font-weight:400;letter-spacing:0;">
-          <input type="radio" name="m_tipo_vidrio" id="m_tv_vcomon" value="vcomon" checked onchange="updatePrecioVidrio();previewCalc()"> Vidrio Comun
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;text-transform:none;font-weight:400;letter-spacing:0;">
-          <input type="radio" name="m_tipo_vidrio" id="m_tv_dvh" value="dvh" onchange="updatePrecioVidrio();previewCalc()"> DVH
-        </label>
-      </div>
+      <select id="m_subtipo_vidrio" onchange="updatePrecioVidrio();previewCalc()" style="margin-top:4px;">
+        ${(state.tipos_vidrio&&state.tipos_vidrio.length?state.tipos_vidrio:[{id:'vcomon',nombre:'Vidrio Comun',tipo_base:'vcomon',precio:8500},{id:'dvh',nombre:'DVH',tipo_base:'dvh',precio:15000}]).map(tv=>'<option value="'+tv.id+'">'+tv.nombre+'</option>').join('')}
+      </select>
     </div>
     <div class="form-group"><label>Precio vidrio ($/m²)</label><input type="number" id="m_pvid" value="8500" oninput="this.dataset.userModified='1';previewCalc()"></div>
     <div id="m_preview"></div>
@@ -4108,8 +4181,14 @@ async function confirmarAgregarAbertura() {
     const params = {};
     (tipo?.params || []).forEach(pa => { params[pa.id] = parseInt(document.getElementById(`param_${pa.id}`)?.value) || pa.default; });
 
-    const tipoVidrio = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
+    const subtipoId = document.getElementById('m_subtipo_vidrio')?.value;
+    const subtipoObj = state.tipos_vidrio?.find(t => t.id === subtipoId);
+    const tipoVidrio = subtipoObj?.tipo_base || 'vcomon';
     params.tipo_vidrio = tipoVidrio;
+    if (subtipoObj) {
+      params.subtipo_vidrio_id = subtipoObj.id;
+      params.subtipo_vidrio_nombre = subtipoObj.nombre;
+    }
 
     // Premarco
     const _cfgPmSnap = getConfigPremarco(linea_id);
