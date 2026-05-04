@@ -4899,7 +4899,40 @@ function imprimirPlanCortes(presupuestoId) {
     return '<div style="margin-bottom:20px;page-break-inside:avoid;">'      + '<div style="font-size:12pt;font-weight:700;color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between;">'      +   '<span>'+nombre+'</span>'      +   '<span style="font-size:10pt;font-weight:400;color:#64748b;">'+barras.length+' barra'+(barras.length!==1?'s':'')+'</span>'      + '</div>'      + barrasHtml2      + '</div>';
   }).join('');
 
-  // ── 6. Detail per abertura (cuts + herrajes) ─────────────────────────────
+  // ── 6. Aggregate herrajes across all aberturas ──────────────────────────
+  const herrajesAgrupados = {}; // nombre -> { nombre, cantidad, unidad }
+  for (const a of abs) {
+    const cant = Number(a.cantidad) || 1;
+    const herrajesSnap = tryParse(a.herrajes_snap, []) || [];
+    for (const h of herrajesSnap) {
+      const key = h.nombre;
+      if (!herrajesAgrupados[key]) {
+        herrajesAgrupados[key] = { nombre: h.nombre, cantidad: 0, unidad: h.unidad || 'u.' };
+      }
+      herrajesAgrupados[key].cantidad += Number(h.cantidad) * cant;
+    }
+  }
+  const herrajesResumenRows = Object.values(herrajesAgrupados)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    .map(h =>
+      '<tr>'
+      + '<td style="padding:7px 10px;border:1px solid #e2e8f0;font-weight:600;">' + h.nombre + '</td>'
+      + '<td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;font-family:monospace;font-size:11pt;">' + (Number.isInteger(h.cantidad) ? h.cantidad : Math.round(h.cantidad * 100)/100) + '</td>'
+      + '<td style="padding:7px 10px;border:1px solid #e2e8f0;text-align:center;color:#64748b;">' + h.unidad + '</td>'
+      + '</tr>'
+    ).join('');
+  const herrajesResumenHtml = Object.keys(herrajesAgrupados).length
+    ? '<table style="width:100%;border-collapse:collapse;font-size:10.5pt;">'
+      + '<thead><tr style="background:#0f172a;color:#fff;">'
+      +   '<th style="padding:8px 10px;text-align:left;">Herraje / Accesorio</th>'
+      +   '<th style="padding:8px 10px;text-align:center;">Cantidad total</th>'
+      +   '<th style="padding:8px 10px;text-align:center;">Unidad</th>'
+      + '</tr></thead>'
+      + '<tbody>' + herrajesResumenRows + '</tbody>'
+      + '</table>'
+    : '<p style="color:#64748b;">Sin herrajes registrados.</p>';
+
+  // ── 7. Detail per abertura (cuts + herrajes) ──────────────────────────────
   const detalleHtml = abs.map((a, abIdx) => {
     const cant = Number(a.cantidad) || 1;
     const params = tryParse(a.params, {});
@@ -4970,6 +5003,9 @@ function imprimirPlanCortes(presupuestoId) {
   ${placasHtml}
 
   ${vidrosDVH.length ? '<h2>🔷 Vidrio DVH — Por unidad</h2>' + dvhHtml : ''}
+
+  <h2>🔩 Resumen de herrajes y accesorios</h2>
+  ${herrajesResumenHtml}
 
   <h2>📋 Detalle por abertura</h2>
   ${detalleHtml}
