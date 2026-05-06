@@ -1220,31 +1220,45 @@ async function loadAll() {
 
       const umbralRow = configRows.find(r => r.key === 'umbral_sobrante');
       if (umbralRow) state.umbral_sobrante = Number(umbralRow.value) || 20;
-    if (!lineas.length)     for (const l of LINEAS_DEFAULT)     await sheetsAppend(SHEETS.lineas, l);
-    if (!perfiles.length)   for (const p of PERFILES_DEFAULT)   await sheetsAppend(SHEETS.perfiles, p);
-    if (!herrajes.length)   for (const h of HERRAJES_DEFAULT)   await sheetsAppend(SHEETS.herrajes, h);
-    if (!precios_kg.length) for (const p of PRECIOS_KG_DEFAULT) await sheetsAppend(SHEETS.precios_kg, p);
+    // Use defaults in memory only if Sheet is empty — never auto-write to Sheet
+    // This prevents corrupting user config on slow loads or Sheet errors
 
-    // Auto-migrar tipologias built-in si no estan en el Sheet
+    // Deduplicate tipologias_custom in case of duplicate sheet rows
+    const _seenTipos = new Set();
+    state.tipologias_custom = state.tipologias_custom.filter(t => {
+      if (_seenTipos.has(t.id)) return false;
+      _seenTipos.add(t.id);
+      return true;
+    });
+    // Deduplicate lineas in state
+    const _seenLineas = new Set();
+    state.lineas = state.lineas.filter(l => {
+      if (_seenLineas.has(l.id)) return false;
+      _seenLineas.add(l.id);
+      return true;
+    });
+
+    // Add built-in tipologias to memory ONLY — never write to Sheet automatically
     const BUILTIN_META = [
-      { id: 'ventana-corrediza',        nombre: 'Ventana Corrediza',        linea_id: 'modena', con_hojas: true, hojas_min: 2, hojas_max: 8, hojas_default: 2 },
-      { id: 'puerta-abrir',             nombre: 'Puerta de Abrir',          linea_id: 'modena', con_hojas: true, hojas_min: 1, hojas_max: 2, hojas_default: 1 },
-      { id: 'puerta-ventana-corrediza', nombre: 'Puerta Ventana Corrediza', linea_id: 'modena', con_hojas: true, hojas_min: 2, hojas_max: 3, hojas_default: 2 },
+      { id: 'ventana-corrediza',        nombre: 'Ventana Corrediza',        linea_id: 'modena', con_hojas: true, hojas_min: 1, hojas_max: 2, hojas_default: 2 },
+      { id: 'puerta-abrir',             nombre: 'Puerta de Abrir',          linea_id: 'modena', con_hojas: true, hojas_min: 1, hojas_max: 1, hojas_default: 1 },
+      { id: 'puerta-ventana-corrediza', nombre: 'Puerta Ventana Corrediza', linea_id: 'modena', con_hojas: true, hojas_min: 2, hojas_max: 2, hojas_default: 2 },
     ];
     for (const meta of BUILTIN_META) {
-      const metaKey = 'tipologia_custom_meta__' + meta.id;
-      const cfgKey  = 'tipologia_' + meta.linea_id + '__' + meta.id;
-      const cfg = BUILTIN_CFG_DEFAULT[meta.linea_id]?.[meta.id];
-      if (!cfg) continue;
-
-      if (!configRows.find(r => r.key === metaKey)) {
-        await sheetsAppend(SHEETS.config, { id: genId(), key: metaKey, value: JSON.stringify(meta) });
+      const cfgKey = 'tipologia_' + meta.linea_id + '__' + meta.id;
+      // Only add to state if not already loaded from Sheet
+      if (!state.tipologias_custom.some(t => t.id === meta.id)) {
         state.tipologias_custom.push(meta);
       }
+      // Use built-in config in memory if Sheet has none
       if (!configRows.find(r => r.key === cfgKey)) {
-        await sheetsAppend(SHEETS.config, { id: genId(), key: cfgKey, value: JSON.stringify(cfg) });
-        if (!state.config_tipologias[meta.linea_id]) state.config_tipologias[meta.linea_id] = {};
-        state.config_tipologias[meta.linea_id][meta.id] = cfg;
+        const cfg = BUILTIN_CFG_DEFAULT[meta.linea_id]?.[meta.id];
+        if (cfg) {
+          if (!state.config_tipologias[meta.linea_id]) state.config_tipologias[meta.linea_id] = {};
+          if (!state.config_tipologias[meta.linea_id][meta.id]) {
+            state.config_tipologias[meta.linea_id][meta.id] = cfg;
+          }
+        }
       }
     }
   } catch(e) { toast('Error cargando datos', 'error'); }
