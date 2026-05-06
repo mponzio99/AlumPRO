@@ -1057,13 +1057,8 @@ const BUILTIN_CFG_DEFAULT = {
 };
 
 function getConfigTipo(linea_id, tipo_id) {
-  // 1. Config editada/guardada en Sheet (tiene prioridad)
-  const custom = state.config_tipologias?.[linea_id]?.[tipo_id];
-  if (custom) return custom;
-  // 2. Fallback: config built-in hardcodeada (para tipologias no migradas aun)
-  const builtin = BUILTIN_CFG_DEFAULT[linea_id]?.[tipo_id];
-  if (builtin) return builtin;
-  return null;
+  // Only use config from Sheet — no fallback to built-in defaults
+  return state.config_tipologias?.[linea_id]?.[tipo_id] || null;
 }
 
 // Obtener herrajes de una tipología: usa config editable si existe, sino hardcoded en TIPOS_ABERTURA
@@ -1250,16 +1245,7 @@ async function loadAll() {
       if (!state.tipologias_custom.some(t => t.id === meta.id)) {
         state.tipologias_custom.push(meta);
       }
-      // Use built-in config in memory if Sheet has none
-      if (!configRows.find(r => r.key === cfgKey)) {
-        const cfg = BUILTIN_CFG_DEFAULT[meta.linea_id]?.[meta.id];
-        if (cfg) {
-          if (!state.config_tipologias[meta.linea_id]) state.config_tipologias[meta.linea_id] = {};
-          if (!state.config_tipologias[meta.linea_id][meta.id]) {
-            state.config_tipologias[meta.linea_id][meta.id] = cfg;
-          }
-        }
-      }
+      // No fallback to built-in config — if not in Sheet, tipologia has no config
     }
   } catch(e) { toast('Error cargando datos', 'error'); }
   setLoading(false);
