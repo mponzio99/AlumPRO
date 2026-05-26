@@ -480,7 +480,8 @@ function getCortesRaw(linea_id, tipo_id, W, H, params, perfilesDB) {
       const _nTab = Math.max(1, Math.floor(_altoZona / _altoTab));
       const _anchoHoja = Math.max(0, Math.round(W / (Number(params?.hojas) || 1)) - 150); // W/N - 150mm rebaje
       if (_nTab > 0 && _anchoHoja > 0) {
-        _cortesBase.push({ perfil: _tabPerfil, cantidad: _nTab, largo: _anchoHoja, desc: 'Tablilla' });
+        // _nTab tablillas por hoja, N hojas en total
+        _cortesBase.push({ perfil: _tabPerfil, cantidad: _nTab * (Number(params?.hojas) || 1), largo: _anchoHoja, desc: 'Tablilla' });
       }
     }
   }
@@ -1403,7 +1404,6 @@ function _renderListaCards() {
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
           <button onclick="event.stopPropagation();imprimirPresupuesto('${p.id}')" style="display:flex;align-items:center;gap:5px;padding:5px 12px;background:transparent;border:1px solid var(--border2);border-radius:7px;color:var(--text3);cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">PDF</button>
-          <button onclick="event.stopPropagation();compartirPresupuesto('${p.id}')" style="display:flex;align-items:center;gap:5px;padding:5px 12px;background:transparent;border:1px solid var(--border2);border-radius:7px;color:var(--text3);cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;" onmouseover="this.style.borderColor='#00E5A0';this.style.color='#00E5A0'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">Compartir</button>
           <button onclick="event.stopPropagation();exportarWord('${p.id}')" style="display:flex;align-items:center;gap:5px;padding:5px 12px;background:transparent;border:1px solid var(--border2);border-radius:7px;color:var(--text3);cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;" onmouseover="this.style.borderColor='#2B8EFF';this.style.color='#2B8EFF'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">Word</button>
         </div>
       </div>
@@ -4545,16 +4545,30 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
       + '<line x1="'+(mid+8)+'" y1="'+cy+'" x2="'+(W-pad-8)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>';
   }
   else if (tipo_id === 'puerta-abrir') {
-    // Hoja completa
-    const bx = pad+2, by = pad+2, bw = iW-4, bh = iH-4;
-    // Arco de apertura (cuarto de círculo desde esquina)
-    const r = Math.min(bw, bh) * 0.85;
-    interior = ''
-      + '<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>'
-      // Arco de apertura
-      + '<path d="M '+(bx+bw)+' '+by+' A '+r+' '+r+' 0 0 0 '+bx+' '+(by+r)+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>'
-      // Manija
-      + '<circle cx="'+(bx+bw-6)+'" cy="'+cy+'" r="3" fill="'+gc+'"/>';
+    const N_hojas = Number(params?.hojas) || 1;
+    const hojaW = Math.round(iW / N_hojas);
+    interior = '';
+    for (let hi = 0; hi < N_hojas; hi++) {
+      const bx = pad + 2 + hi * hojaW;
+      const by = pad + 2;
+      const bw = hojaW - 2;
+      const bh = iH - 4;
+      const r = Math.min(bw, bh) * 0.75;
+      // Hoja
+      interior += '<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
+      // Arco de apertura alternado (par izquierda, impar derecha)
+      if (hi % 2 === 0) {
+        interior += '<path d="M '+(bx+bw)+' '+by+' A '+r+' '+r+' 0 0 0 '+bx+' '+(by+r)+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>';
+        interior += '<circle cx="'+(bx+bw-6)+'" cy="'+(by+bh/2)+'" r="3" fill="'+gc+'"/>';
+      } else {
+        interior += '<path d="M '+bx+' '+by+' A '+r+' '+r+' 0 0 1 '+(bx+bw)+' '+(by+r)+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>';
+        interior += '<circle cx="'+(bx+6)+'" cy="'+(by+bh/2)+'" r="3" fill="'+gc+'"/>';
+      }
+      // Divisor entre hojas
+      if (hi < N_hojas - 1) {
+        interior += '<line x1="'+(bx+bw)+'" y1="'+pad+'" x2="'+(bx+bw)+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
+      }
+    }
   }
   else if (tipo_id === 'puerta-corrediza') {
     const mid = pad + iW/2;
