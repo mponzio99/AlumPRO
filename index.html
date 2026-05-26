@@ -2089,10 +2089,6 @@ function renderConfig() {
             <input value="${v.formula_alto_vcomon||v.formula_alto||''}" placeholder="Ej: H-168" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_alto_vcomon',this.value)">
           </div>
         </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Precio por m² ($/m²)</label>
-          <input type="number" value="${v.precio_vcomon||8500}" style="font-family:'DM Mono',monospace;width:120px;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','precio_vcomon',this.value)">
-        </div>
       </div>
       <div style="background:var(--bg);border:1px solid var(--accent)44;border-radius:8px;padding:12px;">
         <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">DVH</div>
@@ -2106,13 +2102,10 @@ function renderConfig() {
             <input value="${v.formula_alto_dvh||''}" placeholder="Ej: H-175" style="font-family:'DM Mono',monospace;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','formula_alto_dvh',this.value)">
           </div>
         </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Precio por m² ($/m²)</label>
-          <input type="number" value="${v.precio_dvh||12000}" style="font-family:'DM Mono',monospace;width:120px;" onchange="updateConfigVidrio('${lineaActiva}','${tipoActivo}','precio_dvh',this.value)">
-        </div>
       </div>
     </div>
     <div style="font-size:11px;color:var(--text3);margin-top:8px;">Variables: <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">W</code> ancho, <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">H</code> alto, <code style="background:var(--surface);padding:1px 5px;border-radius:3px;">N</code> hojas</div>
+    <div style="font-size:11px;color:var(--accent);margin-top:6px;">💡 El precio del vidrio se configura en <b>Tipos de vidrio</b>, no por tipología.</div>
     <div style="margin-top:12px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
       <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">GIF animado (para el PDF)</div>
       <div class="form-group" style="margin-bottom:0;">
@@ -3559,24 +3552,13 @@ function updatePrecioKg() {
 }
 
 function updatePrecioVidrio() {
-  const linea_id = document.getElementById('m_linea')?.value;
-  const tipoId   = document.getElementById('m_tipo')?.value;
   const subtipoId = document.getElementById('m_subtipo_vidrio')?.value;
   const subtipo = state.tipos_vidrio?.find(t => t.id === subtipoId);
-  const tv = subtipo?.tipo_base || subtipoId || 'vcomon';
   const input = document.getElementById('m_pvid');
-  if (!linea_id || !tipoId || !input) return;
-  // Load price from subtipo first, fallback to tipologia config
+  if (!input) return;
+  // El precio viene SOLO del tipo de vidrio seleccionado
   if (subtipo && !input.dataset.userModified) {
     input.value = subtipo.precio;
-  }
-  const cfg = getConfigTipo(linea_id, tipoId);
-  if (!cfg || !cfg.vidrio) return;
-  if (!subtipo) {
-    const precio = tv === 'dvh'
-      ? (cfg.vidrio.precio_dvh || cfg.vidrio.precio_vcomon || null)
-      : (cfg.vidrio.precio_vcomon || null);
-    if (precio && !input.dataset.userModified) input.value = precio;
   }
 }
 
@@ -4045,7 +4027,7 @@ function showAddAbertura() {
         ${(state.tipos_vidrio&&state.tipos_vidrio.length?state.tipos_vidrio:[{id:'vcomon',nombre:'Vidrio Comun',tipo_base:'vcomon',precio:8500},{id:'dvh',nombre:'DVH',tipo_base:'dvh',precio:15000}]).map(tv=>'<option value="'+tv.id+'">'+tv.nombre+'</option>').join('')}
       </select>
     </div>
-    <div class="form-group"><label>Precio vidrio ($/m²)</label><input type="number" id="m_pvid" value="8500" oninput="this.dataset.userModified='1';previewCalc()"></div>
+    <div class="form-group" style="display:none;"><label>Precio vidrio ($/m²)</label><input type="number" id="m_pvid" value="8500" oninput="this.dataset.userModified='1';previewCalc()"></div>
     <div id="m_preview"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -4108,17 +4090,15 @@ function previewCalc() {
   const cant   = parseInt(document.getElementById('m_cant')?.value) || 1;
   const tv     = document.querySelector('input[name="m_tipo_vidrio"]:checked')?.value || 'vcomon';
   // Calcular precio vidrio directamente desde config segun tipo seleccionado
-  const _cfgPv = getConfigTipo(document.getElementById('m_linea')?.value, document.getElementById('m_tipo')?.value);
-  const _pVidConfig = _cfgPv?.vidrio
-    ? (tv === 'dvh' ? (_cfgPv.vidrio.precio_dvh || _cfgPv.vidrio.precio_vcomon) : _cfgPv.vidrio.precio_vcomon)
-    : null;
   const pVidInput = document.getElementById('m_pvid');
-  // Solo usar precio de config si el usuario no modificó el campo manualmente
   const pVidUserModified = pVidInput?.dataset.userModified === '1';
+  // El precio viene del tipo de vidrio seleccionado, o del input si el usuario lo modificó
+  const subtipoIdPv = document.getElementById('m_subtipo_vidrio')?.value;
+  const subtipoPv = state.tipos_vidrio?.find(t => t.id === subtipoIdPv);
   const pVid = pVidUserModified
-    ? (parseFloat(pVidInput.value) || 8500)
-    : (_pVidConfig ? Number(_pVidConfig) : (parseFloat(pVidInput?.value) || 8500));
-  if (!pVidUserModified && _pVidConfig && pVidInput) pVidInput.value = pVid;
+    ? (parseFloat(pVidInput?.value) || 8500)
+    : (subtipoPv ? subtipoPv.precio : (parseFloat(pVidInput?.value) || 8500));
+  if (!pVidUserModified && pVidInput) pVidInput.value = pVid;
   const preview = document.getElementById('m_preview');
   const btnAb   = document.getElementById('btnAgregarAb');
   if (!preview) return;
