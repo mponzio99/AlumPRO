@@ -4619,7 +4619,7 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
     interior = '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
   }
 
-  // Tablillas overlay — dibuja zona tablillas sobre el interior
+  // Tablillas overlay — dibuja zona tablillas respetando división por hojas
   let tabOverlay = '';
   const _pctTab = Number(params?.pct_tablillas) || 0;
   if (_pctTab > 0) {
@@ -4629,17 +4629,34 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
     const _tabY = _tabPos === 'arriba' ? pad + 2 : pad + 2 + _vidH;
     const _vidY = _tabPos === 'arriba' ? pad + 2 + _tabH : pad + 2;
     const _altoTabPerfil = Math.max(4, Math.round(_tabH / Math.max(1, Math.floor(_tabH / 12))));
-    // Zona vidrio
-    tabOverlay += '<rect x="'+(pad+2)+'" y="'+_vidY+'" width="'+(iW-4)+'" height="'+_vidH+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.9"/>';
-    // Zona tablillas — fondo gris
-    tabOverlay += '<rect x="'+(pad+2)+'" y="'+_tabY+'" width="'+(iW-4)+'" height="'+_tabH+'" fill="#cbd5e1" stroke="'+fc+'" stroke-width="1"/>';
-    // Líneas de tablillas
-    let _ty = _tabY + _altoTabPerfil;
-    while (_ty < _tabY + _tabH - 2) {
-      tabOverlay += '<line x1="'+(pad+2)+'" y1="'+_ty+'" x2="'+(W-pad-2)+'" y2="'+_ty+'" stroke="'+fc+'" stroke-width="0.8" opacity="0.6"/>';
-      _ty += _altoTabPerfil;
+    const N_tab = Number(params?.hojas) || 1;
+    const hojaW = Math.round(iW / N_tab);
+
+    for (let hi = 0; hi < N_tab; hi++) {
+      const _hx = pad + 2 + hi * hojaW;
+      const _hw = hojaW - 2;
+      // Zona vidrio por hoja
+      tabOverlay += '<rect x="'+_hx+'" y="'+_vidY+'" width="'+_hw+'" height="'+_vidH+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.9"/>';
+      // Zona tablillas por hoja — fondo gris
+      tabOverlay += '<rect x="'+_hx+'" y="'+_tabY+'" width="'+_hw+'" height="'+_tabH+'" fill="#cbd5e1" stroke="'+fc+'" stroke-width="1"/>';
+      // Líneas de tablillas por hoja
+      let _ty = _tabY + _altoTabPerfil;
+      while (_ty < _tabY + _tabH - 2) {
+        tabOverlay += '<line x1="'+_hx+'" y1="'+_ty+'" x2="'+(_hx+_hw)+'" y2="'+_ty+'" stroke="'+fc+'" stroke-width="0.8" opacity="0.6"/>';
+        _ty += _altoTabPerfil;
+      }
+      // Manija por hoja
+      if (hi % 2 === 0) {
+        tabOverlay += '<circle cx="'+(_hx+_hw-6)+'" cy="'+(pad+2+_vidH/2)+'" r="3" fill="'+gc+'"/>';
+      } else {
+        tabOverlay += '<circle cx="'+(_hx+6)+'" cy="'+(pad+2+_vidH/2)+'" r="3" fill="'+gc+'"/>';
+      }
+      // Divisor entre hojas
+      if (hi < N_tab - 1) {
+        tabOverlay += '<line x1="'+(_hx+_hw)+'" y1="'+pad+'" x2="'+(_hx+_hw)+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
+      }
     }
-    // Reset interior to just the frame (no glass fill since we redraw zones)
+    // Reset interior — lo redibujamos por hoja arriba
     interior = '';
   }
 
