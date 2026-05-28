@@ -5225,7 +5225,9 @@ function imprimirPresupuesto(id) {
   const totalFinal = subtotal * (1 + markup / 100);
 
   const aberturasHtml = abs.map((a, i) => {
-    const svgContent = a.es_modulo ? svgModulo(a.secciones, a.alto, 130, 80) : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
+    const _nSecs = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones.length : (tryParse(a.secciones, []) || []).length) : 0;
+    const _modMaxW = Math.min(300, Math.max(130, _nSecs * 90));
+    const svgContent = a.es_modulo ? svgModulo(a.secciones, a.alto, _modMaxW, 120) : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
     // Get gif_url from tipologia config
     const _cfgGif = a.es_modulo ? null : getConfigTipo(a.linea_id, a.tipo_id);
     const gifUrl = _cfgGif?.gif_url || '';
