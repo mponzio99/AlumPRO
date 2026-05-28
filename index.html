@@ -740,9 +740,11 @@ function calcularVidriosModulo(a) {
     if (altoSec <= 0) continue;
     const vA = evalFormula(fA, Number(sec.ancho), altoSec, N);
     const vH = evalFormula(fH, Number(sec.ancho), altoSec, N);
-    const precioVid = tv === 'dvh'
-      ? (Number(v.precio_dvh) || 15000)
-      : (Number(v.precio_vcomon) || Number(v.precio) || 8500);
+    // Precio por sección si fue guardado, sino desde tipos_vidrio, sino desde config tipología
+    const tvObj = state.tipos_vidrio?.find(t => t.tipo_base === tv);
+    const precioVid = Number(sec.precio_vidrio)
+      || (tvObj ? Number(tvObj.precio) : 0)
+      || (tv === 'dvh' ? (Number(v.precio_dvh) || 15000) : (Number(v.precio_vcomon) || Number(v.precio) || 8500));
     for (let i = 0; i < N; i++) {
       vidrios.push({ ancho: vA, alto: vH, desc: sec.nombre + ' hoja ' + (i+1) + (tv==='dvh'?' (DVH)':''), precioVid, cant });
     }
@@ -3674,6 +3676,77 @@ function showAddModulo() {
   _renderModalModulo();
 }
 
+function _buildSeccionParamsHtml(lineaId, tipoId, secIdx) {
+  if (!tipoId) return '';
+  const tipos = getTiposLinea(lineaId);
+  const tipo = tipos.find(t => t.id === tipoId);
+  const cfgTipo = getConfigTipo(lineaId, tipoId);
+
+  // Params de hojas
+  const paramsHtml = (tipo?.params || []).map(p => `
+    <div class="form-group" style="margin-bottom:8px;">
+      <label>${p.nombre}</label>
+      <input type="number" id="sec_param_${secIdx}_${p.id}" value="${p.default}" min="${p.min}" max="${p.max}" style="width:80px;font-family:monospace;" oninput="_actualizarSeccionesUI()">
+    </div>`).join('');
+
+  // Tipos de vidrio
+  const tvOpts = (state.tipos_vidrio && state.tipos_vidrio.length
+    ? state.tipos_vidrio
+    : [{id:'tv1',nombre:'Vidrio común 4mm',tipo_base:'vcomon',precio:8500},{id:'tv2',nombre:'DVH 4+9+4',tipo_base:'dvh',precio:15000}]
+  ).map(tv => `<option value="${tv.id}">${tv.nombre}</option>`).join('');
+
+  // Tablillas
+  const tabHtml = cfgTipo?.tablillas?.enabled ? `
+    <div class="form-group" style="margin-bottom:8px;">
+      <label>% Tablillas</label>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="number" id="sec_pct_tab_${secIdx}" value="0" min="0" max="100" style="width:70px;font-family:monospace;" oninput="_actualizarSeccionesUI()">
+        <span style="font-size:12px;color:var(--text3);">%</span>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:8px;">
+      <label>Posición tablillas</label>
+      <div style="display:flex;gap:12px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;text-transform:none;">
+          <input type="radio" name="sec_tab_pos_${secIdx}" value="abajo" checked> Abajo
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;text-transform:none;">
+          <input type="radio" name="sec_tab_pos_${secIdx}" value="arriba"> Arriba
+        </label>
+      </div>
+    </div>` : '';
+
+  // Premarco
+  const cfgPm = getConfigPremarco(lineaId);
+  const pmHtml = cfgPm?.perfil_codigo ? `
+    <div class="form-group" style="margin-bottom:8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="sec_premarco_${secIdx}">
+        <span>Con premarco</span>
+      </label>
+    </div>` : '';
+
+  return `
+    ${paramsHtml}
+    <div class="form-group" style="margin-bottom:8px;">
+      <label>Tipo de vidrio</label>
+      <select id="sec_tv_${secIdx}" onchange="_onSecTvChange(${secIdx})">${tvOpts}</select>
+    </div>
+    <div class="form-group" style="margin-bottom:8px;">
+      <label>Precio vidrio ($/m²)</label>
+      <input type="number" id="sec_pvid_${secIdx}" value="${state.tipos_vidrio?.[0]?.precio || 8500}" style="width:120px;font-family:monospace;" oninput="this.dataset.userModified='1'">
+    </div>
+    ${tabHtml}
+    ${pmHtml}`;
+}
+
+function _onSecTvChange(secIdx) {
+  const sel = document.getElementById('sec_tv_' + secIdx);
+  const tv = state.tipos_vidrio?.find(t => t.id === sel?.value);
+  const input = document.getElementById('sec_pvid_' + secIdx);
+  if (tv && input && !input.dataset.userModified) input.value = tv.precio;
+}
+
 function _renderModalModulo() {
   const secciones = window._moduloSecciones || [];
   const orient    = window._moduloOrient || 'h'; // 'h' horizontal, 'v' vertical
@@ -3750,11 +3823,9 @@ function _renderModalModulo() {
     + '<div class="form-row" style="gap:8px;margin-top:8px;">'
     + '<div class="form-group" style="flex:1;min-width:90px;"><label>' + varDimLabel + '</label>'
     + '<input type="number" id="' + varDimId + '" value="' + varDimVal + '" placeholder="' + varDimHint + '" style="font-family:monospace;"></div>'
-    + '<div class="form-group" style="flex:1;min-width:90px;"><label>Tipo vidrio</label>'
-    + '<select id="mod_sec_tv">'
-    + '<option value="vcomon"' + (!window._moduloSecTv||window._moduloSecTv==='vcomon'?' selected':'') + '>V. Comun</option>'
-    + '<option value="dvh"' + (window._moduloSecTv==='dvh'?' selected':'') + '>DVH</option>'
-    + '</select></div>'
+    + '</div>'
+    + '<div id="mod_sec_params_wrap">'
+    + _buildSeccionParamsHtml(state.lineas[0]?.id || 'modena', window._moduloSecTipo || '', (window._moduloSecciones||[]).length)
     + '</div>'
     + '<button class="btn-secondary" style="width:100%;margin-top:8px;" onclick="_agregarSeccion()">+ Agregar seccion</button>'
     + '</div>'
@@ -3774,34 +3845,69 @@ function _buildTipologiaSelect(currentVal) {
 
 function _guardarSeleccionSeccion() {
   window._moduloSecTipo = document.getElementById('mod_sec_tipo')?.value;
-  window._moduloSecAncho = document.getElementById('mod_sec_ancho')?.value;
-  window._moduloSecTv = document.getElementById('mod_sec_tv')?.value;
+  window._moduloSecAncho = document.getElementById('mod_sec_ancho')?.value || '';
+  window._moduloSecAlto  = document.getElementById('mod_sec_alto')?.value || '';
+  // Refrescar panel de params según tipología seleccionada
+  const wrap = document.getElementById('mod_sec_params_wrap');
+  if (wrap) {
+    const linea = state.lineas[0]?.id || 'modena';
+    const secIdx = (window._moduloSecciones || []).length;
+    wrap.innerHTML = _buildSeccionParamsHtml(linea, window._moduloSecTipo || '', secIdx);
+  }
 }
 
 function _agregarSeccion() {
   const sel = document.getElementById('mod_sec_tipo');
   const tipoId = sel ? sel.options[sel.selectedIndex]?.value : '';
-  const tv     = document.getElementById('mod_sec_tv')?.value || 'vcomon';
   const esH    = (window._moduloOrient || 'h') === 'h';
   const dimInput = document.getElementById(esH ? 'mod_sec_ancho' : 'mod_sec_alto');
   const dimVal = Number(dimInput?.value) || 0;
   const ancho  = esH ? dimVal : (window._moduloAncho || Number(document.getElementById('mod_ancho_fijo')?.value) || 1000);
   const altoV  = !esH ? dimVal : 0;
   if (!tipoId || !dimVal) { toast('Completa tipologia y ' + (esH ? 'ancho' : 'alto'), 'error'); return; }
+
   const tipos = getTiposLinea(state.lineas[0]?.id || 'modena');
   const tipo = tipos.find(t => t.id === tipoId);
+  const secIdx = (window._moduloSecciones || []).length;
+
+  // Leer params del formulario
+  const subtipoId = document.getElementById('sec_tv_' + secIdx)?.value;
+  const subtipoObj = state.tipos_vidrio?.find(t => t.id === subtipoId);
+  const tipoVidrio = subtipoObj?.tipo_base || 'vcomon';
+  const precioVidrio = Number(document.getElementById('sec_pvid_' + secIdx)?.value) || subtipoObj?.precio || 8500;
+  const pctTab = Number(document.getElementById('sec_pct_tab_' + secIdx)?.value) || 0;
+  const tabPos = document.querySelector(`input[name="sec_tab_pos_${secIdx}"]:checked`)?.value || 'abajo';
+  const conPremarco = document.getElementById('sec_premarco_' + secIdx)?.checked || false;
+
+  // Hojas desde params
+  const hojasInput = document.getElementById('sec_param_' + secIdx + '_hojas');
+  const hojas = Number(hojasInput?.value) || Number(tipo?.params?.find(p=>p.id==='hojas')?.default) || 1;
+
+  const params = {
+    tipo_vidrio: tipoVidrio,
+    subtipo_vidrio_id: subtipoId,
+    subtipo_vidrio_nombre: subtipoObj?.nombre || '',
+    hojas,
+    ...(pctTab > 0 ? { pct_tablillas: pctTab, tab_pos: tabPos } : {}),
+    ...(conPremarco ? { con_premarco: true } : {}),
+  };
+
   if (!window._moduloSecciones) window._moduloSecciones = [];
   const altoSec = !esH ? altoV : 0;
-  window._moduloSecciones.push({ tipologia_id: tipoId, nombre: tipo?.nombre || tipoId, ancho, alto: altoSec || undefined, tipo_vidrio: tv });
-  // Save state
+  window._moduloSecciones.push({
+    tipologia_id: tipoId,
+    nombre: tipo?.nombre || tipoId,
+    ancho,
+    alto: altoSec || undefined,
+    tipo_vidrio: tipoVidrio,
+    precio_vidrio: precioVidrio,
+    params,
+  });
+
   window._moduloSecTipo = tipoId;
-  window._moduloSecTv = tv;
-  if (esH) window._moduloSecAncho = ''; else window._moduloSecAlto = '';
   window._moduloAlto = Number(document.getElementById('mod_alto')?.value) || 1000;
   window._moduloCant = Number(document.getElementById('mod_cant')?.value) || 1;
-  // Clear ancho for next section, keep tipo and tv
-  window._moduloSecAncho = '';
-  // Update only secciones list and SVG
+  if (esH) window._moduloSecAncho = ''; else window._moduloSecAlto = '';
   _actualizarSeccionesUI();
 }
 
