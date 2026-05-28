@@ -3611,12 +3611,18 @@ function _renderModuloCard(a, c, cTotal) {
   let seccionesHtml = '';
   if (expanded && secciones.length) {
     for (const sec of secciones) {
+      const _secParams = tryParse(sec.params, {});
+      const _secTvNombre = _secParams?.subtipo_vidrio_nombre
+        || (sec.tipo_vidrio === 'dvh' ? 'DVH' : 'V. Común');
+      const _secTvColor = sec.tipo_vidrio === 'dvh' ? 'var(--accent)' : '#0ea5e9';
+      const _secTabInfo = Number(_secParams?.pct_tablillas) > 0
+        ? ' · <span style="color:#FFB830;">' + _secParams.pct_tablillas + '% tablillas</span>' : '';
       seccionesHtml += '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--bg);border-radius:8px;margin-bottom:6px;">'
         + '<div style="flex:1;">'
         +   '<div style="font-size:13px;color:var(--text);font-weight:600;">' + sec.nombre + '</div>'
         +   '<div style="font-size:11px;color:var(--text3);">' + sec.ancho + 'x' + a.alto + 'mm · '
-        +     '<span style="color:' + (sec.tipo_vidrio==='dvh'?'var(--accent)':'#0ea5e9') + ';">'
-        +     (sec.tipo_vidrio==='dvh'?'DVH':'V. Comun') + '</span>'
+        +     '<span style="color:' + _secTvColor + ';">' + _secTvNombre + '</span>'
+        +     _secTabInfo
         +   '</div>'
         + '</div>'
         + '</div>';
@@ -4790,30 +4796,28 @@ function svgModulo(secsRaw, altoMm, maxW, maxH) {
   if (ratio >= 1) { W = maxW; H = Math.round(maxW / ratio); if (H > maxH) { H = maxH; W = Math.round(maxH * ratio); } }
   else { H = maxH; W = Math.round(maxH * ratio); if (W > maxW) { W = maxW; H = Math.round(maxW / ratio); } }
   W = Math.max(W, 60); H = Math.max(H, 40);
-  const pad = 5;
-  const fc = '#1e3a5f', gc = '#0ea5e9', gf = '#dbeafe';
-  const sw = Math.max(2, Math.round(Math.min(W,H)/30));
-  const iW = W - pad*2, iH = H - pad*2;
+  const iW = W - 10;
   const totalH = H + 18;
-  // Draw each section proportionally
+  const fc = '#1e3a5f';
+  const sw = Math.max(2, Math.round(Math.min(W,H)/30));
+
+  // Dibujar cada sección usando svgAbertura() escalado
   let interior = '';
-  let x = pad;
+  let x = 0;
   for (const sec of secciones) {
     const secW = Math.round((Number(sec.ancho) / anchoTotal) * iW);
-    interior += '<rect x="'+x+'" y="'+pad+'" width="'+secW+'" height="'+iH+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
-    // Label
-    const label = sec.nombre ? sec.nombre.substring(0,8) : '';
-    interior += '<text x="'+(x+secW/2)+'" y="'+(pad+iH/2+4)+'" text-anchor="middle" font-size="7" fill="'+fc+'" font-family="monospace">'+label+'</text>';
-    if (sec.tipo_vidrio === 'dvh') {
-      interior += '<text x="'+(x+secW/2)+'" y="'+(pad+iH/2+13)+'" text-anchor="middle" font-size="6" fill="#00b37e" font-family="monospace">DVH</text>';
-    }
+    const params = tryParse(sec.params, {}) || {};
+    // Generar SVG de la sección individual
+    const secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), altoMm, secW, H, params);
+    // Extraer el contenido interno del SVG generado (entre las etiquetas <svg>)
+    const svgContent = secSvg.replace(/<svg[^>]*>/, '').replace(/<\/svg>/, '');
+    // Envolver en un grupo con translate para posicionar
+    interior += '<g transform="translate('+x+',0)">'+svgContent+'</g>';
     x += secW;
-    // Divider between sections
-    if (x < W - pad) interior += '<line x1="'+x+'" y1="'+pad+'" x2="'+x+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
   }
+
   const labelTotal = anchoTotal + 'x' + altoMm + 'mm';
   return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg">'
-    + '<rect x="0" y="0" width="'+W+'" height="'+H+'" rx="2" fill="#f8fafc" stroke="'+fc+'" stroke-width="'+sw+'"/>'
     + interior
     + '<text x="'+(W/2)+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="8" fill="'+fc+'" font-family="monospace" font-weight="600">'+labelTotal+'</text>'
     + '</svg>';
@@ -5246,12 +5250,19 @@ function imprimirPresupuesto(id) {
     const precioUnitario = precioTotal / cant;
     const seccionesListPdf = a.es_modulo && a.secciones && a.secciones.length
       ? '<div style="margin-top:6px;padding:6px 10px;background:#f8fafc;border-radius:6px;border-left:3px solid #00b37e;">'
-        + a.secciones.map(sec =>
-            '<div style="font-size:11px;color:#475569;padding:1px 0;">'
-            + '<b>' + sec.nombre + '</b> · ' + sec.ancho + 'x' + a.alto + 'mm'
-            + (sec.tipo_vidrio === 'dvh' ? ' · <span style="color:#00b37e;font-weight:700;">DVH</span>' : '')
-            + '</div>'
-          ).join('')
+        + a.secciones.map(sec => {
+            const _sp = tryParse(sec.params, {});
+            const _tvNombre = _sp?.subtipo_vidrio_nombre
+              || (sec.tipo_vidrio === 'dvh' ? 'DVH' : 'V. Común');
+            const _tvColor = sec.tipo_vidrio === 'dvh' ? '#00b37e' : '#0369a1';
+            const _tabInfo = Number(_sp?.pct_tablillas) > 0
+              ? ' · <span style="color:#f59e0b;font-weight:600;">' + _sp.pct_tablillas + '% tablillas</span>' : '';
+            return '<div style="font-size:11px;color:#475569;padding:1px 0;">'
+              + '<b>' + sec.nombre + '</b> · ' + sec.ancho + 'x' + a.alto + 'mm'
+              + ' · <span style="color:' + _tvColor + ';font-weight:600;">' + _tvNombre + '</span>'
+              + _tabInfo
+              + '</div>';
+          }).join('')
         + '</div>'
       : '';
     return `
