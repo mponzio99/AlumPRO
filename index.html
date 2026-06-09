@@ -4690,16 +4690,31 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
       + '<circle cx="'+(mid-8)+'" cy="'+cy+'" r="3" fill="'+gc+'"/>';
   }
   else if (tipo_id === 'puerta-ventana-corrediza') {
-    // Similar a ventana corrediza pero más alta — se nota en la proporción automática
-    const mid = pad + iW/2;
-    interior = ''
-      + '<line x1="'+mid+'" y1="'+pad+'" x2="'+mid+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>'
-      + '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="2"/>'
-      + '<rect x="'+(mid+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.7"/>'
-      // Manija en hoja izquierda
-      + '<circle cx="'+(mid-8)+'" cy="'+cy+'" r="4" fill="'+gc+'"/>'
+    const N_hojas = Number(params?.hojas) || 2;
+    interior = '';
+    for (let hi = 0; hi < N_hojas; hi++) {
+      const hojaW = Math.round(iW / N_hojas);
+      const bx = pad + 2 + hi * hojaW;
+      const bw = hojaW - 2;
+      const by = pad + 2;
+      const bh = iH - 4;
+      // Hoja
+      interior += '<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="'+(hi===0?'2':'1.5')+'" opacity="'+(hi===0?'1':'0.7')+'"/>';
+      // Zócalo alto (franja inferior)
+      interior += '<rect x="'+bx+'" y="'+(by+bh-Math.round(bh*0.15))+'" width="'+bw+'" height="'+Math.round(bh*0.15)+'" fill="#bfdbfe" stroke="'+gc+'" stroke-width="1" opacity="0.8"/>';
       // Flecha deslizamiento
-      + '<line x1="'+(pad+10)+'" y1="'+cy+'" x2="'+(mid-14)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>';
+      if (hi % 2 === 0) {
+        interior += '<line x1="'+(bx+6)+'" y1="'+(by+bh/2)+'" x2="'+(bx+bw-6)+'" y2="'+(by+bh/2)+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>';
+        interior += '<circle cx="'+(bx+bw-8)+'" cy="'+(by+bh/2)+'" r="3" fill="'+gc+'"/>';
+      } else {
+        interior += '<line x1="'+(bx+bw-6)+'" y1="'+(by+bh/2)+'" x2="'+(bx+6)+'" y2="'+(by+bh/2)+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>';
+        interior += '<circle cx="'+(bx+8)+'" cy="'+(by+bh/2)+'" r="3" fill="'+gc+'"/>';
+      }
+      // Divisor entre hojas
+      if (hi < N_hojas - 1) {
+        interior += '<line x1="'+(bx+hojaW)+'" y1="'+pad+'" x2="'+(bx+hojaW)+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
+      }
+    }
   }
   else if (tipo_id === 'pano-fijo') {
     interior = ''
