@@ -3531,9 +3531,33 @@ function showModalNuevoPresupuesto() {
 function updateTiposYPrecios() {
   const linea_id = document.getElementById('m_linea_ppto')?.value;
   const tipo = document.getElementById('m_tipo_al')?.value || 'nuevo';
-  const preciosFiltrados = state.precios_kg.filter(p => p.linea_id === linea_id && p.tipo === tipo);
-  const colores = [...new Set(preciosFiltrados.map(p => p.nombre))];
   const colorSel = document.getElementById('m_color_al');
+  const precioInput = document.getElementById('m_precio_kg');
+
+  // Si no hay colores cargados para esta linea en state, recargar desde Sheet
+  const preciosFiltrados = state.precios_kg.filter(p => p.linea_id === linea_id && p.tipo === tipo);
+  if (!preciosFiltrados.length) {
+    // Mostrar loading y recargar
+    if (colorSel) colorSel.innerHTML = '<option>Cargando...</option>';
+    sheetsGet(SHEETS.precios_kg).then(rows => {
+      // Actualizar state con los nuevos datos
+      rows.forEach(r => {
+        if (!state.precios_kg.find(p => p.id === r.id)) {
+          state.precios_kg.push(r);
+        }
+      });
+      // Ahora sí filtrar y poblar
+      const filtered = state.precios_kg.filter(p => p.linea_id === linea_id && p.tipo === tipo);
+      const colores = [...new Set(filtered.map(p => p.nombre))];
+      if (colorSel) colorSel.innerHTML = colores.map(c => `<option value="${c}">${c}</option>`).join('');
+      updatePrecioKg();
+    }).catch(() => {
+      if (colorSel) colorSel.innerHTML = '<option>Sin colores</option>';
+    });
+    return;
+  }
+
+  const colores = [...new Set(preciosFiltrados.map(p => p.nombre))];
   if (colorSel) {
     colorSel.innerHTML = colores.map(c => `<option value="${c}">${c}</option>`).join('');
   }
