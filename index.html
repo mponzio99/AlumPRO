@@ -3855,7 +3855,7 @@ function _renderModalModulo() {
     + '<input type="number" id="' + varDimId + '" value="' + varDimVal + '" placeholder="' + varDimHint + '" style="font-family:monospace;"></div>'
     + '</div>'
     + '<div id="mod_sec_params_wrap">'
-    + _buildSeccionParamsHtml(state.lineas[0]?.id || 'modena', window._moduloSecTipo || '', (window._moduloSecciones||[]).length)
+    + _buildSeccionParamsHtml((state.presupuestos.find(x=>x.id===state.presupuestoActivo)?.linea_id || state.lineas[0]?.id || 'modena'), window._moduloSecTipo || '', (window._moduloSecciones||[]).length)
     + '</div>'
     + '<button class="btn-secondary" style="width:100%;margin-top:8px;" onclick="_agregarSeccion()">+ Agregar seccion</button>'
     + '</div>'
@@ -3867,7 +3867,9 @@ function _renderModalModulo() {
 }
 
 function _buildTipologiaSelect(currentVal) {
-  const tipos = getTiposLinea(state.lineas[0]?.id || 'modena');
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  const lineaId = p?.linea_id || state.lineas[0]?.id || 'modena';
+  const tipos = getTiposLinea(lineaId);
   const opts = tipos.map(t => '<option value="' + t.id + '"' + (t.id === currentVal ? ' selected' : '') + '>' + t.nombre + '</option>').join('');
   return '<div class="form-group" style="flex:2;min-width:150px;"><label>Tipologia</label>'
     + '<select id="mod_sec_tipo" onchange="_guardarSeleccionSeccion()">' + opts + '</select></div>';
@@ -4104,13 +4106,17 @@ async function confirmarAgregarModulo() {
 }
 
 function showAddAbertura() {
-  const lineaOpts = state.lineas.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (!p) return;
+  const lineaActiva = state.lineas.find(l => l.id === p.linea_id);
+  const lineaNombre = lineaActiva?.nombre || p.linea_id || 'Modena';
   showModal(`
     <div class="modal-title">Agregar Abertura</div>
+    <input type="hidden" id="m_linea" value="${p.linea_id || 'modena'}">
     <div class="form-row">
       <div class="form-group">
         <label>Linea</label>
-        <select id="m_linea" onchange="updateTipos()">${lineaOpts}</select>
+        <div style="padding:8px 12px;background:var(--bg);border-radius:8px;font-size:14px;color:var(--text2);border:1px solid var(--border);">${lineaNombre}</div>
       </div>
       <div class="form-group">
         <label>Tipo</label>
