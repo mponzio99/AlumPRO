@@ -3699,7 +3699,7 @@ function showAddModulo() {
   window._moduloAncho = 1000;   // fijo en vertical
   window._moduloCant = 1;
   window._moduloOrient = 'h';   // 'h' = horizontal, 'v' = vertical
-  window._moduloSecTipo = null;
+  window._moduloSecTipo = getTiposLinea(p.linea_id)[0]?.id || null;
   window._moduloSecAncho = '';
   window._moduloSecAlto = '';
   window._moduloSecTv = 'vcomon';
