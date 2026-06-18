@@ -4636,6 +4636,24 @@ async function crearStock() {
 // SVG DESCRIPTIVOS POR TIPO DE ABERTURA (con proporciones reales)
 // ============================================================
 function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
+  // Resolver tipo de dibujo para tipologías custom
+  const _BUILTINS = ['ventana-corrediza','puerta-abrir','puerta-corrediza','puerta-ventana-corrediza','pano-fijo','ventana-abrir','banderola','ventana-dvh','pano-fijo-dvh','puerta-ventana-abrir'];
+  if (!_BUILTINS.includes(tipo_id)) {
+    const _customMeta = state.tipologias_custom.find(t => t.id === tipo_id);
+    if (_customMeta) {
+      const _n = (_customMeta.nombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if      (_n.includes('corrediza') && _n.includes('puerta ventana')) tipo_id = 'puerta-ventana-corrediza';
+      else if (_n.includes('corrediza') && _n.includes('puerta'))         tipo_id = 'puerta-corrediza';
+      else if (_n.includes('corrediza'))                                   tipo_id = 'ventana-corrediza';
+      else if (_n.includes('abrir') && _n.includes('puerta ventana'))     tipo_id = 'puerta-ventana-abrir';
+      else if (_n.includes('abrir') && _n.includes('puerta'))             tipo_id = 'puerta-abrir';
+      else if (_n.includes('abrir'))                                       tipo_id = 'ventana-abrir';
+      else if (_n.includes('oscilobatiente') || _n.includes('oscilo'))    tipo_id = 'ventana-abrir';
+      else if (_n.includes('pano fijo') || _n.includes('fijo'))           tipo_id = 'pano-fijo';
+      else if (_n.includes('banderola'))                                   tipo_id = 'banderola';
+      else if (_n.includes('dvh'))                                         tipo_id = 'ventana-dvh';
+    }
+  }
   // Calcular dimensiones respetando la proporción real de la abertura
   maxW = maxW || 160;
   maxH = maxH || 200;
@@ -4671,18 +4689,27 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
   let interior = '';
 
   if (tipo_id === 'ventana-corrediza') {
-    const mid = pad + iW/2;
-    interior = ''
-      // divisor central
-      + '<line x1="'+mid+'" y1="'+pad+'" x2="'+mid+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>'
-      // hoja izquierda (vidrio)
-      + '<rect x="'+(pad+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.8"/>'
-      // hoja derecha (vidrio)
-      + '<rect x="'+(mid+2)+'" y="'+(pad+2)+'" width="'+(iW/2-4)+'" height="'+(iH-4)+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.8"/>'
-      // flecha izquierda
-      + '<line x1="'+(pad+8)+'" y1="'+cy+'" x2="'+(mid-8)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>'
-      // flecha derecha
-      + '<line x1="'+(mid+8)+'" y1="'+cy+'" x2="'+(W-pad-8)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>';
+    const N_hojas = Number(params?.hojas) || 2;
+    const hojaW = Math.round(iW / N_hojas);
+    interior = '';
+    for (let hi = 0; hi < N_hojas; hi++) {
+      const bx = pad + 2 + hi * hojaW;
+      const bw = hojaW - 2;
+      const by = pad + 2, bh = iH - 4;
+      interior += '<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5" opacity="0.8"/>';
+      // flecha deslizamiento (alterna dirección)
+      if (hi % 2 === 0) {
+        interior += '<line x1="'+(bx+6)+'" y1="'+cy+'" x2="'+(bx+bw-6)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>';
+        interior += '<circle cx="'+(bx+bw-8)+'" cy="'+cy+'" r="2.5" fill="'+gc+'"/>';
+      } else {
+        interior += '<line x1="'+(bx+bw-6)+'" y1="'+cy+'" x2="'+(bx+6)+'" y2="'+cy+'" stroke="'+gc+'" stroke-width="1.5" stroke-dasharray="3,2"/>';
+        interior += '<circle cx="'+(bx+8)+'" cy="'+cy+'" r="2.5" fill="'+gc+'"/>';
+      }
+      // divisor entre hojas
+      if (hi < N_hojas - 1) {
+        interior += '<line x1="'+(bx+hojaW)+'" y1="'+pad+'" x2="'+(bx+hojaW)+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
+      }
+    }
   }
   else if (tipo_id === 'puerta-abrir') {
     const N_hojas = Number(params?.hojas) || 1;
