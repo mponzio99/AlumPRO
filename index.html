@@ -5300,14 +5300,14 @@ function imprimirPresupuesto(id) {
           if (_ratio >= 1) { _totalW = _maxTotalW; _sharedH = Math.round(_maxTotalW / _ratio); if (_sharedH > _maxH) { _sharedH = _maxH; _totalW = Math.round(_maxH * _ratio); } }
           else { _sharedH = _maxH; _totalW = Math.round(_maxH * _ratio); if (_totalW > _maxTotalW) { _totalW = _maxTotalW; _sharedH = Math.round(_maxTotalW / _ratio); } }
           _sharedH = Math.max(_sharedH, 40);
-          return '<div style="display:flex;gap:2px;align-items:flex-end;">'
+          return '<div style="display:flex;gap:0;align-items:flex-end;">'
             + _secsArr.map((sec, _si) => {
                 const _sp = tryParse(sec.params, {}) || {};
                 const _secWpx = Math.max(20, Math.round((Number(sec.ancho) / _anchoTotal) * _totalW));
                 const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), _altoMm, _secWpx, _sharedH, _sp);
                 const _secIdx2 = _secsArr.indexOf(sec);
 				const _isLast = _si === _secsArr.length - 1;
-				return '<div style="display:flex;flex-direction:column;align-items:center;' + (!_isLast ? 'border-right:3px solid #1e3a5f;' : '') + '">'
+				return '<div style="display:flex;flex-direction:column;align-items:center;">'
                   + _secSvg
                   + '<div style="font-size:8px;color:#64748b;text-align:center;margin-top:2px;white-space:nowrap;">' + sec.ancho + 'x' + a.alto + 'mm</div>'
                   + '</div>';
