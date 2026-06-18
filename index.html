@@ -5273,17 +5273,28 @@ function imprimirPresupuesto(id) {
 	const _nSecs = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones.length : (tryParse(a.secciones, []) || []).length) : 0;
 	const _secsArr = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones : (tryParse(a.secciones, []) || [])) : [];
 	const svgContent = a.es_modulo
-	  ? '<div style="display:flex;gap:2px;align-items:flex-end;">'
-		+ _secsArr.map(sec => {
-			const _sp = tryParse(sec.params, {}) || {};
-			const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), Number(a.alto), 60, 100, _sp);
-			return '<div style="display:flex;flex-direction:column;align-items:center;">'
-			  + _secSvg
-			  + '<div style="font-size:8px;color:#64748b;text-align:center;margin-top:2px;white-space:nowrap;">' + sec.ancho + 'x' + a.alto + 'mm</div>'
-			  + '</div>';
-		  }).join('')
-		+ '</div>'
-	  : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
+      ? ((() => {
+          const _maxTotalW = 200, _maxH = 110;
+          const _anchoTotal = _secsArr.reduce((s, sec) => s + Number(sec.ancho), 0);
+          const _altoMm = Number(a.alto);
+          const _ratio = _anchoTotal / _altoMm;
+          let _totalW, _sharedH;
+          if (_ratio >= 1) { _totalW = _maxTotalW; _sharedH = Math.round(_maxTotalW / _ratio); if (_sharedH > _maxH) { _sharedH = _maxH; _totalW = Math.round(_maxH * _ratio); } }
+          else { _sharedH = _maxH; _totalW = Math.round(_maxH * _ratio); if (_totalW > _maxTotalW) { _totalW = _maxTotalW; _sharedH = Math.round(_maxTotalW / _ratio); } }
+          _sharedH = Math.max(_sharedH, 40);
+          return '<div style="display:flex;gap:2px;align-items:flex-end;">'
+            + _secsArr.map(sec => {
+                const _sp = tryParse(sec.params, {}) || {};
+                const _secWpx = Math.max(20, Math.round((Number(sec.ancho) / _anchoTotal) * _totalW));
+                const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), _altoMm, _secWpx, _sharedH, _sp);
+                return '<div style="display:flex;flex-direction:column;align-items:center;">'
+                  + _secSvg
+                  + '<div style="font-size:8px;color:#64748b;text-align:center;margin-top:2px;white-space:nowrap;">' + sec.ancho + 'x' + a.alto + 'mm</div>'
+                  + '</div>';
+              }).join('')
+            + '</div>';
+        })())
+      : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
     // Get gif_url from tipologia config
     const _cfgGif = a.es_modulo ? null : getConfigTipo(a.linea_id, a.tipo_id);
     const gifUrl = _cfgGif?.gif_url || '';
