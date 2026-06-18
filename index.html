@@ -3882,7 +3882,8 @@ function _guardarSeleccionSeccion() {
   // Refrescar panel de params según tipología seleccionada
   const wrap = document.getElementById('mod_sec_params_wrap');
   if (wrap) {
-    const linea = state.lineas[0]?.id || 'modena';
+    const _pAct = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+    const linea = _pAct?.linea_id || state.lineas[0]?.id || 'modena';
     const secIdx = (window._moduloSecciones || []).length;
     wrap.innerHTML = _buildSeccionParamsHtml(linea, window._moduloSecTipo || '', secIdx);
   }
@@ -3898,7 +3899,8 @@ function _agregarSeccion() {
   const altoV  = !esH ? dimVal : 0;
   if (!tipoId || !dimVal) { toast('Completa tipologia y ' + (esH ? 'ancho' : 'alto'), 'error'); return; }
 
-  const tipos = getTiposLinea(state.lineas[0]?.id || 'modena');
+  const _pActSec = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  const tipos = getTiposLinea(_pActSec?.linea_id || state.lineas[0]?.id || 'modena');
   const tipo = tipos.find(t => t.id === tipoId);
   const secIdx = (window._moduloSecciones || []).length;
 
@@ -4754,13 +4756,29 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
       + '<line x1="'+(W-pad-6)+'" y1="'+(pad+6)+'" x2="'+(pad+6)+'" y2="'+(H-pad-6)+'" stroke="'+gc+'" stroke-width="1" opacity="0.3"/>';
   }
   else if (tipo_id === 'ventana-abrir') {
-    const bx = pad+2, by = pad+2, bw = iW-4, bh = iH-4;
-    const r = Math.min(bw, bh) * 0.8;
-    interior = ''
-      + '<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>'
-      // Arco apertura desde abajo
-      + '<path d="M '+bx+' '+(by+bh)+' A '+r+' '+r+' 0 0 1 '+(bx+r)+' '+by+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>'
-      + '<circle cx="'+(bx+bw-6)+'" cy="'+cy+'" r="3" fill="'+gc+'"/>';
+    const N_hojas = Number(params?.hojas) || 1;
+    const hojaW = Math.round((iW - (N_hojas - 1) * sw) / N_hojas);
+    interior = '';
+    for (let hi = 0; hi < N_hojas; hi++) {
+      const bx = pad + 2 + hi * (hojaW + sw);
+      const by = pad + 2, bh = iH - 4;
+      const r = Math.min(hojaW, bh) * 0.8;
+      // vidrio de la hoja
+      interior += '<rect x="'+bx+'" y="'+by+'" width="'+hojaW+'" height="'+bh+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
+      // arco de apertura (alterna lado)
+      if (hi % 2 === 0) {
+        interior += '<path d="M '+bx+' '+(by+bh)+' A '+r+' '+r+' 0 0 1 '+(bx+r)+' '+by+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>';
+        interior += '<circle cx="'+(bx+hojaW-6)+'" cy="'+(by+bh/2)+'" r="3" fill="'+gc+'"/>';
+      } else {
+        interior += '<path d="M '+(bx+hojaW)+' '+(by+bh)+' A '+r+' '+r+' 0 0 0 '+(bx+hojaW-r)+' '+by+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>';
+        interior += '<circle cx="'+(bx+6)+'" cy="'+(by+bh/2)+'" r="3" fill="'+gc+'"/>';
+      }
+      // perfil divisor entre hojas
+      if (hi < N_hojas - 1) {
+        const divX = bx + hojaW + Math.round(sw/2);
+        interior += '<line x1="'+divX+'" y1="'+pad+'" x2="'+divX+'" y2="'+(H-pad)+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
+      }
+    }
   }
   else if (tipo_id === 'banderola') {
     const midY = pad + iH * 0.4;
@@ -5287,7 +5305,8 @@ function imprimirPresupuesto(id) {
                 const _sp = tryParse(sec.params, {}) || {};
                 const _secWpx = Math.max(20, Math.round((Number(sec.ancho) / _anchoTotal) * _totalW));
                 const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), _altoMm, _secWpx, _sharedH, _sp);
-                return '<div style="display:flex;flex-direction:column;align-items:center;">'
+                const _isLast = _secsArr.indexOf(sec) === _secsArr.length - 1;
+				return '<div style="display:flex;flex-direction:column;align-items:center;' + (!_isLast ? 'border-right:3px solid #1e3a5f;margin-right:0;padding-right:0;' : '') + '">'
                   + _secSvg
                   + '<div style="font-size:8px;color:#64748b;text-align:center;margin-top:2px;white-space:nowrap;">' + sec.ancho + 'x' + a.alto + 'mm</div>'
                   + '</div>';
