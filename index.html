@@ -5270,9 +5270,20 @@ function imprimirPresupuesto(id) {
   const totalFinal = subtotal * (1 + markup / 100);
 
   const aberturasHtml = abs.map((a, i) => {
-    const _nSecs = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones.length : (tryParse(a.secciones, []) || []).length) : 0;
-    const _modMaxW = 145;
-    const svgContent = a.es_modulo ? svgModulo(a.secciones, a.alto, _modMaxW, 120) : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
+	const _nSecs = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones.length : (tryParse(a.secciones, []) || []).length) : 0;
+	const _secsArr = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones : (tryParse(a.secciones, []) || [])) : [];
+	const svgContent = a.es_modulo
+	  ? '<div style="display:flex;gap:2px;align-items:flex-end;">'
+		+ _secsArr.map(sec => {
+			const _sp = tryParse(sec.params, {}) || {};
+			const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), Number(a.alto), 60, 100, _sp);
+			return '<div style="display:flex;flex-direction:column;align-items:center;">'
+			  + _secSvg
+			  + '<div style="font-size:8px;color:#64748b;text-align:center;margin-top:2px;white-space:nowrap;">' + sec.ancho + 'x' + a.alto + 'mm</div>'
+			  + '</div>';
+		  }).join('')
+		+ '</div>'
+	  : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
     // Get gif_url from tipologia config
     const _cfgGif = a.es_modulo ? null : getConfigTipo(a.linea_id, a.tipo_id);
     const gifUrl = _cfgGif?.gif_url || '';
@@ -5314,7 +5325,7 @@ function imprimirPresupuesto(id) {
       : '';
     return `
       <div style="display:flex;align-items:center;gap:24px;padding:18px 0;border-bottom:1px solid #e2e8f0;break-inside:avoid;">
-        <div style="flex:0 0 150px;display:flex;align-items:center;justify-content:center;">${svg}</div>
+        <div style="${a.es_modulo ? 'flex:0 0 auto;max-width:220px;' : 'flex:0 0 150px;'}display:flex;align-items:center;justify-content:center;">${svg}</div>
         <div style="flex:1;">
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="font-size:16px;font-weight:700;color:#0f172a;font-family:'Syne',sans-serif;">${a.nombre}</div>
