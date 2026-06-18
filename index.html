@@ -4817,7 +4817,7 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
     interior = '';
   }
 
-  return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg">'
+  return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;">'
     // Marco exterior
     + '<rect x="0" y="0" width="'+W+'" height="'+H+'" rx="2" fill="#f8fafc" stroke="'+fc+'" stroke-width="'+sw+'"/>'
     + (_pctTab > 0 ? '' : interior)
@@ -4890,7 +4890,7 @@ function svgModuloV(secciones, anchomm, maxW, maxH) {
     y+=secH;
     if(y<H-pad) interior+='<line x1="'+pad+'" y1="'+y+'" x2="'+(W-pad)+'" y2="'+y+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
   }
-  return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg">'
+  return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;">'
     +'<rect x="0" y="0" width="'+W+'" height="'+H+'" rx="2" fill="#f8fafc" stroke="'+fc+'" stroke-width="'+sw+'"/>'
     +interior
     +'<text x="'+(W/2)+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="8" fill="'+fc+'" font-family="monospace" font-weight="600">'+anchomm+'x'+altoTotal+'mm</text>'
@@ -5272,7 +5272,9 @@ function imprimirPresupuesto(id) {
   const aberturasHtml = abs.map((a, i) => {
     const _nSecs = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones.length : (tryParse(a.secciones, []) || []).length) : 0;
     const _modMaxW = Math.min(300, Math.max(130, _nSecs * 90));
-    const svgContent = a.es_modulo ? svgModulo(a.secciones, a.alto, _modMaxW, 120) : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
+    const svgContent = a.es_modulo
+      ? '<div style="max-width:100%;overflow:hidden;">' + svgModulo(a.secciones, a.alto, _modMaxW, 120) + '</div>'
+      : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
     // Get gif_url from tipologia config
     const _cfgGif = a.es_modulo ? null : getConfigTipo(a.linea_id, a.tipo_id);
     const gifUrl = _cfgGif?.gif_url || '';
