@@ -4822,8 +4822,8 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
       // bisagras abajo (dos puntos)
       + '<circle cx="'+(bx+bw*0.25)+'" cy="'+(by+bh)+'" r="2.2" fill="'+fc+'"/>'
       + '<circle cx="'+(bx+bw*0.75)+'" cy="'+(by+bh)+'" r="2.2" fill="'+fc+'"/>'
-      // arco de apertura: bascula desde abajo, vertice abajo al centro
-      + '<path d="M '+bx+' '+by+' L '+cx+' '+(by+bh)+' L '+(bx+bw)+' '+by+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>'
+      // arco de apertura: vertice arriba al centro (destrabe), abre hacia las bisagras abajo
+      + '<path d="M '+bx+' '+(by+bh)+' L '+cx+' '+by+' L '+(bx+bw)+' '+(by+bh)+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>'
       // manija arriba al medio
       + '<rect x="'+(cx-5)+'" y="'+(by-1)+'" width="10" height="3" rx="1" fill="'+fc+'"/>';
   }
