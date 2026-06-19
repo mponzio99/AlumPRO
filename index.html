@@ -1550,7 +1550,7 @@ function renderDetalle() {
       <div class="ab-card" style="flex-direction:column;gap:10px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
           <div style="flex:1">
-            <div class="ab-nombre">${a.nombre}</div>
+            <div class="ab-nombre">${a.nomenclatura ? '<span style="color:var(--accent);">' + a.nomenclatura + '</span> · ' : ''}${a.nombre}</div>
             <div class="ab-meta">${a.ancho}x${a.alto} mm · ${a.cantidad} u. · ${a.linea}${tvBadge}</div>
           </div>
           <div style="text-align:right">
@@ -3677,7 +3677,7 @@ function _renderModuloCard(a, c, cTotal) {
     + 'onclick="toggleModuloExpanded(' + s + a.id + s + ')">'
     +   '<div style="flex:1;">'
     +     '<div style="display:flex;align-items:center;gap:8px;">'
-    +       '<div class="ab-nombre">' + a.nombre + '</div>'
+    +       '<div class="ab-nombre">' + (a.nomenclatura ? '<span style="color:var(--accent);">' + a.nomenclatura + '</span> &middot; ' : '') + a.nombre + '</div>'
     +       '<span style="font-size:10px;font-weight:700;color:var(--accent);border:1px solid var(--accent)44;padding:1px 6px;border-radius:10px;">MODULO</span>'
     +     '</div>'
     +     '<div class="ab-meta">' + a.secciones.length + ' secciones · ' + a.ancho + 'x' + a.alto + ' mm · ' + a.cantidad + ' u.</div>'
