@@ -3700,6 +3700,7 @@ function showAddModulo() {
   window._moduloCant = 1;
   window._moduloOrient = 'h';   // 'h' = horizontal, 'v' = vertical
   window._moduloSecTipo = getTiposLinea(p.linea_id)[0]?.id || null;
+  window._moduloNomenclatura = '';
   window._moduloSecAncho = '';
   window._moduloSecAlto = '';
   window._moduloSecTv = 'vcomon';
@@ -3844,6 +3845,7 @@ function _renderModalModulo() {
     + fixedDimField
     + '<div class="form-group" style="flex:1;"><label>Cantidad</label><input type="number" id="mod_cant" value="' + cant + '" min="1" oninput="_moduloCant=Number(this.value)||1"></div>'
     + '</div>'
+    + '<div class="form-group" style="margin-bottom:12px;"><label>Nomenclatura (opcional)</label><input type="text" id="mod_nomenclatura" placeholder="Ej: V1, L4..." value="' + (window._moduloNomenclatura || '') + '" oninput="window._moduloNomenclatura=this.value"></div>'
     + '<div id="mod_ancho_total" style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">' + totalLabel + '</div>'
     + '<div id="mod_secciones">' + seccionesHtml + '</div>'
     + (svgPreview ? '<div id="mod_svg_wrap" style="margin:12px 0;text-align:center;">' + svgPreview + '</div>' : '<div id="mod_svg_wrap"></div>')
@@ -4051,10 +4053,11 @@ async function confirmarAgregarModulo() {
     // In horizontal mode, assign the fixed alto to each section
     if (esH) secciones.forEach(s => { if (!s.alto) s.alto = altoTotal; });
     const nombre = secciones.map(s => s.nombre).join(esH ? ' + ' : ' / ');
-    const linea_id = state.lineas[0]?.id || 'modena';
-    const linea = state.lineas[0];
     const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+    const linea_id = p?.linea_id || state.lineas[0]?.id || 'modena';
+    const linea = state.lineas.find(l => l.id === linea_id) || state.lineas[0];
     const precioKg = getPrecioKgPresupuesto(p);
+    const nomenclatura = (document.getElementById('mod_nomenclatura')?.value || window._moduloNomenclatura || '').trim();
 
     const seccionesJson = JSON.stringify(secciones);
     const ab = {
@@ -4064,6 +4067,7 @@ async function confirmarAgregarModulo() {
       linea: linea?.nombre || linea_id,
       tipo_id: 'modulo-compuesto',
       nombre,
+      nomenclatura,
       ancho: anchoTotal, alto: altoTotal, cantidad: cant,
       params: JSON.stringify({}),
       precio_vidrio: 0,
@@ -4130,6 +4134,7 @@ function showAddAbertura() {
       <div class="form-group"><label>Alto vano (mm)</label><input type="number" id="m_alto" placeholder="1000" oninput="previewCalc()"></div>
       <div class="form-group"><label>Cantidad</label><input type="number" id="m_cant" value="1" min="1" oninput="previewCalc()"></div>
     </div>
+    <div class="form-group"><label>Nomenclatura (opcional)</label><input type="text" id="m_nomenclatura" placeholder="Ej: V1, L4..."></div>
     <div id="m_params"></div>
     <div id="m_premarco_wrap" style="display:none;">
       <div class="form-group">
@@ -4372,6 +4377,7 @@ async function confirmarAgregarAbertura() {
     const H        = parseInt(document.getElementById('m_alto')?.value);
     const cant     = parseInt(document.getElementById('m_cant')?.value) || 1;
     const pVid     = parseFloat(document.getElementById('m_pvid')?.value) || 8500;
+    const nomenclatura = (document.getElementById('m_nomenclatura')?.value || '').trim();
     if (!W || !H) { setBtnLoading(btn, false); return; }
 
     const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
@@ -4432,6 +4438,7 @@ async function confirmarAgregarAbertura() {
       linea: linea?.nombre || linea_id,
       tipo_id: tipoId,
       nombre: `${linea?.nombre} - ${tipo?.nombre}`,
+      nomenclatura,
       ancho: W, alto: H, cantidad: cant,
       params: JSON.stringify(params),
       precio_vidrio: pVid,
@@ -5386,7 +5393,7 @@ function imprimirPresupuesto(id) {
         <div style="${a.es_modulo ? 'flex:0 0 auto;max-width:220px;' : 'flex:0 0 150px;'}display:flex;align-items:center;justify-content:center;">${svg}</div>
         <div style="flex:1;">
           <div style="display:flex;align-items:center;gap:8px;">
-            <div style="font-size:16px;font-weight:700;color:#0f172a;font-family:'Syne',sans-serif;">${a.nombre}</div>
+            <div style="font-size:16px;font-weight:700;color:#0f172a;font-family:'Syne',sans-serif;">${a.nomenclatura ? a.nomenclatura + ' - ' : ''}${a.nombre}</div>
             ${a.es_modulo ? '<span style="font-size:10px;font-weight:700;color:#00b37e;border:1px solid #00b37e44;padding:1px 6px;border-radius:8px;">MODULO</span>' : ''}
           </div>
           <div style="margin-top:6px;display:flex;gap:16px;flex-wrap:wrap;">
@@ -5538,6 +5545,16 @@ async function exportarWord(id) {
       +'<div style="font-size:9pt;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Condiciones y notas</div>'
       +'<div style="font-size:10pt;color:#475569;white-space:pre-line;">'+p.comentarios+'</div>'
       +'</div>' : '')
+    +'<div style="margin-top:28px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:7.5pt;line-height:1.5;color:#94a3b8;text-align:justify;break-inside:avoid;">'
+      +'<b style="color:#64748b;">CONSIDERACIONES GENERALES</b><br>'
+      +'El profesional responsable de la obra o el propietario deberá revisar y verificar cuidadosamente las características, medidas y tipologías indicadas en el presupuesto antes de autorizar su fabricación. Para aberturas de grandes dimensiones o de altas prestaciones se recomienda la colocación de premarcos adecuados. El presente presupuesto no incluye trabajos de albañilería, pintura, instalación eléctrica, colocación de cortinas, persianas ni otros trabajos ajenos al suministro e instalación de las aberturas. La validez de la presente cotización es de 7 días corridos, salvo indicación expresa.<br><br>'
+      +'<b style="color:#64748b;">FORMAS DE PAGO</b><br>'
+      +'Las condiciones y modalidades de pago serán acordadas al momento de la contratación.<br><br>'
+      +'<b style="color:#64748b;">OBSERVACIONES</b><br>'
+      +'Se incluyen burletes, herrajes y sellados correspondientes a la línea presupuestada. Se incluyen tapas y accesorios propios del sistema de perfilería utilizado. No se contempla la limpieza final de la obra ni el retiro de residuos. El presupuesto considera condiciones normales de acceso para el traslado y la colocación. En caso de requerirse andamios, grúas, hidrogrúas, medios de elevación o equipos especiales, dichos costos serán por cuenta del cliente. Los plazos de entrega podrán verse modificados por disponibilidad de materiales, condiciones climáticas o causas ajenas a la empresa.<br><br>'
+      +'<b style="color:#64748b;">MEDICIÓN Y FABRICACIÓN</b><br>'
+      +'Todas las medidas detalladas en el presupuesto se expresan en ancho x alto, salvo aclaración expresa en contrario. La toma de medidas definitiva se realizará una vez que los vanos se encuentren terminados, escuadrados y con los niveles de piso definidos. En caso de fabricar sobre medidas proporcionadas por el cliente o terceros, la responsabilidad por posibles diferencias o errores será exclusiva del solicitante, no admitiéndose reclamos posteriores por este motivo. Las modificaciones de medidas, tipologías o características luego de aprobada la fabricación podrán generar costos adicionales y modificaciones en los plazos de entrega. Las puertas y ventanas se entregan con los sistemas de cierre correspondientes a cada línea. Cerraduras con llave u otros accesorios especiales se incluirán únicamente cuando estén especificados en el presupuesto. La garantía cubre exclusivamente defectos de fabricación y no contempla daños ocasionados por golpes, uso indebido, intervenciones de terceros, asentamientos de obra o falta de mantenimiento.'
+    +'</div>'
     +'<div class="footer">Presupuesto generado por ALUPON</div>'
     +'</body></html>';
 
