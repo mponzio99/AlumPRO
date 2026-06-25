@@ -1597,7 +1597,10 @@ function renderDetalle() {
           </div>
           <div style="text-align:right">
             <div class="ab-costo">${fmt(cTotal)}</div>
-            <button class="btn-danger" style="margin-top:6px" onclick="eliminarAbertura('${a.id}')">✕ Eliminar</button>
+            <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end;">
+              <button class="btn-secondary" style="font-size:12px;padding:6px 10px;" onclick="showEditAbertura('${a.id}')">✏️ Editar</button>
+              <button class="btn-danger" onclick="eliminarAbertura('${a.id}')">✕ Eliminar</button>
+            </div>
           </div>
         </div>
         <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;gap:24px;flex-wrap:wrap;">
@@ -4153,13 +4156,20 @@ async function confirmarAgregarModulo() {
   }
 }
 
+function showEditAbertura(abId) {
+  window._editandoAberturaId = abId;
+  showAddAbertura();
+}
+
 function showAddAbertura() {
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
   if (!p) return;
+  const editId = window._editandoAberturaId || null;
+  const abEdit = editId ? state.aberturas.find(x => x.id === editId) : null;
   const lineaActiva = state.lineas.find(l => l.id === p.linea_id);
   const lineaNombre = lineaActiva?.nombre || p.linea_id || 'Modena';
   showModal(`
-    <div class="modal-title">Agregar Abertura</div>
+    <div class="modal-title">${abEdit ? 'Editar' : 'Agregar'} Abertura</div>
     <input type="hidden" id="m_linea" value="${p.linea_id || 'modena'}">
     <div class="form-row">
       <div class="form-group">
@@ -4172,11 +4182,11 @@ function showAddAbertura() {
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Ancho vano (mm)</label><input type="number" id="m_ancho" placeholder="1200" oninput="previewCalc()"></div>
-      <div class="form-group"><label>Alto vano (mm)</label><input type="number" id="m_alto" placeholder="1000" oninput="previewCalc()"></div>
-      <div class="form-group"><label>Cantidad</label><input type="number" id="m_cant" value="1" min="1" oninput="previewCalc()"></div>
+      <div class="form-group"><label>Ancho vano (mm)</label><input type="number" id="m_ancho" placeholder="1200" value="${abEdit?.ancho || ''}" oninput="previewCalc()"></div>
+      <div class="form-group"><label>Alto vano (mm)</label><input type="number" id="m_alto" placeholder="1000" value="${abEdit?.alto || ''}" oninput="previewCalc()"></div>
+      <div class="form-group"><label>Cantidad</label><input type="number" id="m_cant" value="${abEdit?.cantidad || 1}" min="1" oninput="previewCalc()"></div>
     </div>
-    <div class="form-group"><label>Nomenclatura (opcional)</label><input type="text" id="m_nomenclatura" placeholder="Ej: V1, L4..."></div>
+    <div class="form-group"><label>Nomenclatura (opcional)</label><input type="text" id="m_nomenclatura" placeholder="Ej: V1, L4..." value="${abEdit?.nomenclatura || ''}"></div>
     <div id="m_params"></div>
     <div id="m_premarco_wrap" style="display:none;">
       <div class="form-group">
@@ -4214,25 +4224,28 @@ function showAddAbertura() {
         ${(state.tipos_vidrio&&state.tipos_vidrio.length?state.tipos_vidrio:[{id:'vcomon',nombre:'Vidrio Comun',tipo_base:'vcomon',precio:8500},{id:'dvh',nombre:'DVH',tipo_base:'dvh',precio:15000}]).map(tv=>'<option value="'+tv.id+'">'+tv.nombre+'</option>').join('')}
       </select>
     </div>
-    <div class="form-group"><label>Precio vidrio ($/m²)</label><input type="number" id="m_pvid" value="8500" oninput="this.dataset.userModified='1';previewCalc()"></div>
+    <div class="form-group"><label>Precio vidrio ($/m²)</label><input type="number" id="m_pvid" value="${abEdit?.precio_vidrio || 8500}" oninput="this.dataset.userModified='1';previewCalc()"></div>
     <div id="m_preview"></div>
     <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn-primary" id="btnAgregarAb" onclick="confirmarAgregarAbertura()" disabled>Agregar</button>
+      <button class="btn-secondary" onclick="window._editandoAberturaId=null;closeModal()">Cancelar</button>
+      <button class="btn-primary" id="btnAgregarAb" onclick="confirmarAgregarAbertura()" disabled>${abEdit ? 'Guardar cambios' : 'Agregar'}</button>
     </div>`);
-  updateTipos();
+  updateTipos(abEdit);
 }
 
-function updateTipos() {
+function updateTipos(abEdit) {
   const linea = document.getElementById('m_linea')?.value;
   const tipos = getTiposLinea(linea);
   const sel = document.getElementById('m_tipo');
   if (!sel) return;
   sel.innerHTML = tipos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
-  updateParams();
+  if (abEdit && abEdit.tipo_id) sel.value = abEdit.tipo_id;
+  updateParams(abEdit);
 }
 
-function updateParams() {
+function updateParams(abEdit) {
+  abEdit = abEdit || (window._editandoAberturaId ? state.aberturas.find(x => x.id === window._editandoAberturaId) : null);
+  const _editParams = abEdit ? tryParse(abEdit.params, {}) : {};
   const linea = document.getElementById('m_linea')?.value;
   const tipoId = document.getElementById('m_tipo')?.value;
   const tipos = getTiposLinea(linea);
@@ -4242,17 +4255,31 @@ function updateParams() {
   wrap.innerHTML = (tipo.params || []).map(p => `
     <div class="form-group">
       <label>${p.nombre}</label>
-      <input type="number" id="param_${p.id}" value="${p.default}" min="${p.min}" max="${p.max}" style="width:100px" oninput="previewCalc()">
+      <input type="number" id="param_${p.id}" value="${_editParams[p.id] ?? p.default}" min="${p.min}" max="${p.max}" style="width:100px" oninput="previewCalc()">
     </div>`).join('');
   // Show/hide tablillas section based on tipologia config
   const cfgTipo = getConfigTipo(linea, tipoId);
   const tabWrap = document.getElementById('m_tablillas_wrap');
   if (tabWrap) tabWrap.style.display = cfgTipo?.tablillas?.enabled ? '' : 'none';
+  if (cfgTipo?.tablillas?.enabled && _editParams.pct_tablillas) {
+    const _pctInput = document.getElementById('m_pct_tablillas');
+    if (_pctInput) _pctInput.value = _editParams.pct_tablillas;
+    const _tabRadio = document.querySelector(`input[name="m_tab_pos"][value="${_editParams.tab_pos || 'abajo'}"]`);
+    if (_tabRadio) _tabRadio.checked = true;
+  }
   // Show/hide premarco based on linea config
   const cfgPm = getConfigPremarco(linea);
   const pmWrap = document.getElementById('m_premarco_wrap');
   if (pmWrap) pmWrap.style.display = cfgPm?.perfil_codigo ? '' : 'none';
+  if (_editParams.con_premarco) {
+    const _pmCheck = document.getElementById('m_con_premarco');
+    if (_pmCheck) _pmCheck.checked = true;
+  }
   updatePrecioVidrio();
+  if (_editParams.subtipo_vidrio_id) {
+    const _vidSel = document.getElementById('m_subtipo_vidrio');
+    if (_vidSel) _vidSel.value = _editParams.subtipo_vidrio_id;
+  }
   previewCalc();
 }
 
@@ -4493,8 +4520,16 @@ async function confirmarAgregarAbertura() {
       perfiles_snap: JSON.stringify(perfilesSnap),
       herrajes_snap: JSON.stringify(herrajesSnap),
     };
-    state.aberturas.push(ab);
-    await sheetsAppend(SHEETS.aberturas, ab);
+    if (window._editandoAberturaId) {
+      ab.id = window._editandoAberturaId;
+      const idx = state.aberturas.findIndex(x => x.id === window._editandoAberturaId);
+      if (idx >= 0) state.aberturas[idx] = ab;
+      await sheetsUpdateRow(SHEETS.aberturas, ab.id, ab);
+      window._editandoAberturaId = null;
+    } else {
+      state.aberturas.push(ab);
+      await sheetsAppend(SHEETS.aberturas, ab);
+    }
 
     await recalcularTotal();
     closeModal();
