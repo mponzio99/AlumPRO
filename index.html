@@ -12,7 +12,7 @@
     --surface2: #1A2438;
     --border: #1E2D45;
     --border2: #263548;
-    --accent: #00E5A0;
+    --accent: #00B383;
     --accent2: #0066FF;
     --text: #F0F4FF;
     --text2: #8899BB;
@@ -21,6 +21,22 @@
     --warning: #FFB830;
     --info: #2B8EFF;
     --success: #00E5A0;
+  }
+  [data-theme="light"] {
+    --bg: #F4F6FB;
+    --surface: #FFFFFF;
+    --surface2: #EEF1F7;
+    --border: #DDE3EE;
+    --border2: #CBD4E3;
+    --accent: #00A87A;
+    --accent2: #0057DB;
+    --text: #0F172A;
+    --text2: #475569;
+    --text3: #94A3B8;
+    --danger: #E0294A;
+    --warning: #C9821A;
+    --info: #1D6FD8;
+    --success: #00A87A;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
@@ -246,6 +262,7 @@
       <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
     </svg>
   </button>
+  <button onclick="toggleTheme()" id="themeToggleBtn" title="Cambiar tema" style="background:transparent;border:1px solid var(--border2);border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);margin-left:8px;">🌙</button>
 </header>
 <div class="mobile-menu" id="mobileMenu">
   <button class="mobile-nav-btn active" onclick="navigate('presupuestos');toggleMobileMenu()">📋 Presupuestos</button>
@@ -347,6 +364,19 @@ function toast(msg, type = 'success') {
 // ============================================================
 // ESTADO GLOBAL
 // ============================================================
+function toggleTheme() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const next = isLight ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next === 'light' ? 'light' : '');
+  localStorage.setItem('alumpro_theme', next);
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = next === 'light' ? '☀️' : '🌙';
+}
+(function initTheme() {
+  const saved = localStorage.getItem('alumpro_theme');
+  if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+})();
+
 let state = {
   vista: 'presupuestos',
   presupuestos: [],
@@ -1153,7 +1183,7 @@ function navigate(vista, extra) {
   if (extra) {
     const pNav = state.presupuestos.find(x => x.id === extra);
     if (pNav?.criterio_precio) state._criterioPrecio = pNav.criterio_precio;
-    else state._criterioPrecio = 'proporcional';
+    else state._criterioPrecio = 'barra_completa';
   }
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   const map = { presupuestos: 0, kanban: 1, stock: 2, config: 3 };
@@ -5608,6 +5638,8 @@ function _initConfigScrollSpy() {
 // INIT
 // ============================================================
 loadAll();
+const _themeBtnInit = document.getElementById('themeToggleBtn');
+if (_themeBtnInit) _themeBtnInit.textContent = document.documentElement.getAttribute('data-theme') === 'light' ? '☀️' : '🌙';
 </script>
 </body>
 </html>
