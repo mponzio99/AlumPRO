@@ -4772,13 +4772,15 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
       const r = Math.min(bw, bh) * 0.75;
       // Hoja
       interior += '<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
-      // Arco de apertura alternado (par izquierda, impar derecha)
+      // Arco de apertura alternado (par izquierda, impar derecha) + manija del lado de apertura
       if (hi % 2 === 0) {
         interior += '<path d="M '+(bx+bw)+' '+by+' A '+r+' '+r+' 0 0 0 '+bx+' '+(by+r)+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>';
         interior += '<circle cx="'+(bx+bw-6)+'" cy="'+(by+bh/2)+'" r="3" fill="'+gc+'"/>';
+        interior += '<rect x="'+(bx+bw-4)+'" y="'+(by+bh/2-7)+'" width="3" height="14" rx="1.5" fill="'+fc+'"/>';
       } else {
         interior += '<path d="M '+bx+' '+by+' A '+r+' '+r+' 0 0 1 '+(bx+bw)+' '+(by+r)+'" fill="none" stroke="'+gc+'" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>';
         interior += '<circle cx="'+(bx+6)+'" cy="'+(by+bh/2)+'" r="3" fill="'+gc+'"/>';
+        interior += '<rect x="'+(bx+1)+'" y="'+(by+bh/2-7)+'" width="3" height="14" rx="1.5" fill="'+fc+'"/>';
       }
       // Divisor entre hojas
       if (hi < N_hojas - 1) {
