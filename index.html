@@ -3712,6 +3712,8 @@ function _renderModuloCard(a, c, cTotal) {
     +   '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Secciones (' + secciones.length + ')</div>'
     +   seccionesHtml
     +   '<div style="margin-top:8px;">'
+    +     '<button class="btn-secondary" style="font-size:12px;margin-right:8px;" '
+    +     'onclick="showEditModulo(' + s + a.id + s + ')">✏️ Editar modulo</button>'
     +     '<button class="btn-danger" style="font-size:12px;" '
     +     'onclick="eliminarAbertura(' + s + a.id + s + ')">x Eliminar modulo</button>'
     +   '</div>'
@@ -3736,9 +3738,30 @@ function _renderModuloCard(a, c, cTotal) {
     + '</div>';
 }
 
+function showEditModulo(abId) {
+  const a = state.aberturas.find(x => x.id === abId);
+  if (!a) return;
+  let secciones = a.secciones;
+  if (!Array.isArray(secciones)) secciones = tryParse(secciones, []);
+  if (!Array.isArray(secciones)) secciones = [];
+  window._editandoModuloId = abId;
+  window._moduloSecciones = secciones.map(s => ({ ...s, params: (typeof s.params === 'string' ? tryParse(s.params, {}) : (s.params || {})) }));
+  window._moduloOrient = a.modulo_orient || 'h';
+  window._moduloAlto = (window._moduloOrient === 'h') ? Number(a.alto) : 1000;
+  window._moduloAncho = (window._moduloOrient === 'v') ? Number(a.ancho) : 1000;
+  window._moduloCant = Number(a.cantidad) || 1;
+  window._moduloNomenclatura = a.nomenclatura || '';
+  window._moduloSecTipo = getTiposLinea(a.linea_id)[0]?.id || null;
+  window._moduloSecAncho = '';
+  window._moduloSecAlto = '';
+  window._moduloSecTv = 'vcomon';
+  _renderModalModulo();
+}
+
 function showAddModulo() {
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
   if (!p) return;
+  window._editandoModuloId = null;
   window._moduloSecciones = [];
   window._moduloAlto = 1000;    // fijo en horizontal
   window._moduloAncho = 1000;   // fijo en vertical
@@ -3875,8 +3898,9 @@ function _renderModalModulo() {
     ? 'Secciones · Ancho total: ' + anchoTotal + 'mm'
     : 'Secciones · Alto total: ' + altoTotal + 'mm';
 
+  const _editandoMod = !!window._editandoModuloId;
   updateModal(
-    '<div class="modal-title">Modulo Compuesto</div>'
+    '<div class="modal-title">' + (_editandoMod ? 'Editar Modulo Compuesto' : 'Modulo Compuesto') + '</div>'
     // Orientacion selector
     + '<div style="display:flex;gap:8px;margin-bottom:14px;">'
     +   '<button id="mod_btn_h" onclick="window._moduloOrient=\'h\';_renderModalModulo()" '
@@ -3907,8 +3931,8 @@ function _renderModalModulo() {
     + '<button class="btn-secondary" style="width:100%;margin-top:8px;" onclick="_agregarSeccion()">+ Agregar seccion</button>'
     + '</div>'
     + '<div class="modal-actions" style="margin-top:12px;">'
-    + '<button class="btn-secondary" onclick="closeModal()">Cancelar</button>'
-    + '<button class="btn-primary" id="btnAgregarModulo" onclick="confirmarAgregarModulo()" ' + (!puedeAgregar?'disabled style="opacity:0.5;"':'') + '>Agregar modulo</button>'
+    + '<button class="btn-secondary" onclick="window._editandoModuloId=null;closeModal()">Cancelar</button>'
+    + '<button class="btn-primary" id="btnAgregarModulo" onclick="confirmarAgregarModulo()" ' + (!puedeAgregar?'disabled style="opacity:0.5;"':'') + '>' + (_editandoMod ? 'Guardar cambios' : 'Agregar modulo') + '</button>'
     + '</div>'
   );
 }
@@ -4132,7 +4156,9 @@ async function confirmarAgregarModulo() {
 
     // Calculate costs using in-memory normalized object
     const abMem = { ...ab, es_modulo: true, secciones };
-    const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
+    const _editandoModId = window._editandoModuloId;
+    if (_editandoModId) abMem.id = _editandoModId, ab.id = _editandoModId;
+    const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo && a.id !== _editandoModId);
     const costos = calcularCostoAberturas([...absExistentes, abMem], state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'proporcional', state.umbral_sobrante);
     const c = costos[abMem.id] || {};
     abMem.costo_perfiles = c.perfiles || 0;
@@ -4141,11 +4167,20 @@ async function confirmarAgregarModulo() {
     ab.costo_perfiles = abMem.costo_perfiles;
     ab.costo_vidrios  = abMem.costo_vidrios;
     ab.costo_herrajes = abMem.costo_herrajes;
-    state.aberturas.push(abMem);
-    await sheetsAppend(SHEETS.aberturas, ab);
+
+    if (_editandoModId) {
+      const idx = state.aberturas.findIndex(x => x.id === _editandoModId);
+      if (idx >= 0) state.aberturas[idx] = abMem;
+      await sheetsUpdateRow(SHEETS.aberturas, _editandoModId, ab);
+      window._editandoModuloId = null;
+      toast('Modulo actualizado');
+    } else {
+      state.aberturas.push(abMem);
+      await sheetsAppend(SHEETS.aberturas, ab);
+      toast('Modulo agregado');
+    }
     await recalcularTotal();
     closeModal();
-    toast('Modulo agregado');
   } catch(e) {
     console.error('Error modulo:', e);
     toast('Error: ' + (e.message || e), 'error');
