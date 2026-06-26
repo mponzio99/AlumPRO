@@ -561,11 +561,28 @@ function optimizarCortesConSobrantes(cortesAgrupados, perfilesDB, precioKg, exis
           break;
         }
       }
-      // Si no entró, abrir barra nueva
+      // Si no entró, abrir barra(s) nueva(s)
       if (!ok) {
-        const nuevaBarra = { piezas: [pieza], resto: Number(perfil.largo_barra) - pieza.largo, nueva: true };
-        barras.push(nuevaBarra);
-        barrasNuevas.push(nuevaBarra);
+        const largoBarraPerfil = Number(perfil.largo_barra) || 6000;
+        if (pieza.largo > largoBarraPerfil) {
+          // Pieza más larga que una barra: empalmar N barras completas
+          const nBarras = Math.ceil(pieza.largo / largoBarraPerfil);
+          const restoFinal = (largoBarraPerfil * nBarras) - pieza.largo;
+          for (let bi = 0; bi < nBarras; bi++) {
+            const esUltima = bi === nBarras - 1;
+            const barraEmpalme = {
+              piezas: [{ ...pieza, esEmpalme: true, empalmeIdx: bi + 1, empalmeTotal: nBarras }],
+              resto: esUltima ? restoFinal : 0,
+              nueva: true,
+            };
+            barras.push(barraEmpalme);
+            barrasNuevas.push(barraEmpalme);
+          }
+        } else {
+          const nuevaBarra = { piezas: [pieza], resto: largoBarraPerfil - pieza.largo, nueva: true };
+          barras.push(nuevaBarra);
+          barrasNuevas.push(nuevaBarra);
+        }
       }
     }
 
