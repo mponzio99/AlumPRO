@@ -812,7 +812,7 @@ function calcularVidriosModulo(a) {
 }
 
 function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio, umbralSobrante) {
-  criterio = criterio || 'proporcional';
+  criterio = criterio || 'barra_completa';
   umbralSobrante = umbralSobrante !== undefined ? Number(umbralSobrante) : 20;
 
   // Paso 1: bin packing consolidado
@@ -1408,7 +1408,7 @@ function render() {
 // ============================================================
 function _renderListaCards() {
   const _busqueda = (state._presupuestosBusqueda || '').toLowerCase().trim();
-  const criterio = state._criterioPrecio || 'proporcional';
+  const criterio = state._criterioPrecio || 'barra_completa';
   const ps = state.presupuestos
     .filter(p => {
       if (!_busqueda) return true;
@@ -1487,7 +1487,7 @@ function renderLista() {
       const fa = new Date(a.fecha || 0), fb = new Date(b.fecha || 0);
       return isNaN(fa) || isNaN(fb) ? 0 : fb - fa;
     });
-  const criterio = state._criterioPrecio || 'proporcional';
+  const criterio = state._criterioPrecio || 'barra_completa';
   const cards = ps.length ? ps.map(p => {
     const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
     const precioKg = getPrecioKgPresupuesto(p);
@@ -1583,7 +1583,7 @@ function renderDetalle() {
   if (tab === 'aberturas') {
     const pres = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKg = getPrecioKgPresupuesto(pres);
-    const criterio = state._criterioPrecio || 'proporcional';
+    const criterio = state._criterioPrecio || 'barra_completa';
     const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
 
     const abCards = abs.map((a, idx) => {
@@ -1665,11 +1665,7 @@ function renderDetalle() {
   if (tab === 'calculo') {
     const pres = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKg = getPrecioKgPresupuesto(pres);
-    // Restore criterio from presupuesto if not set yet
-    if (pres?.criterio_precio && state._criterioPrecio !== pres.criterio_precio) {
-      state._criterioPrecio = pres.criterio_precio;
-    }
-    const criterio = state._criterioPrecio || pres?.criterio_precio || 'proporcional';
+    const criterio = state._criterioPrecio || pres?.criterio_precio || 'barra_completa';
 
     // Recalcular bin packing consolidado para detalle de barras
     let barrasAcum = {};
@@ -1859,7 +1855,7 @@ function renderDetalle() {
   if (tab === 'resumen') {
     const presR = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKgR = getPrecioKgPresupuesto(presR);
-    const criterioR = state._criterioPrecio || 'proporcional';
+    const criterioR = state._criterioPrecio || 'barra_completa';
     const costosR = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgR, criterioR, state.umbral_sobrante);
     const costoPR = Object.values(costosR).reduce((s, c) => s + c.perfiles * 1, 0);
     const costoVR = Object.values(costosR).reduce((s, c) => s + c.vidrios * 1, 0);
@@ -3482,7 +3478,7 @@ async function recalcularTotal() {
   const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
   const precioKg = getPrecioKgPresupuesto(p);
   // Usar calcularCostoAberturas para tener en cuenta cantidad correctamente
-  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'proporcional', state.umbral_sobrante);
+  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'barra_completa', state.umbral_sobrante);
   const sub = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
   const total = sub * (1 + Number(p.markup||0) / 100);
   p.total_final = total;
@@ -4176,7 +4172,7 @@ async function confirmarAgregarModulo() {
     const _editandoModId = window._editandoModuloId;
     if (_editandoModId) abMem.id = _editandoModId, ab.id = _editandoModId;
     const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo && a.id !== _editandoModId);
-    const costos = calcularCostoAberturas([...absExistentes, abMem], state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'proporcional', state.umbral_sobrante);
+    const costos = calcularCostoAberturas([...absExistentes, abMem], state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'barra_completa', state.umbral_sobrante);
     const c = costos[abMem.id] || {};
     abMem.costo_perfiles = c.perfiles || 0;
     abMem.costo_vidrios  = c.vidrios  || 0;
@@ -4400,7 +4396,7 @@ function previewCalc() {
 
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
   const precioKg = getPrecioKgPresupuesto(p);
-  const criterio = state._criterioPrecio || 'proporcional';
+  const criterio = state._criterioPrecio || 'barra_completa';
 
   // Simular abertura nueva junto con las existentes para calcular costo real
   const absExistentes = state.aberturas.filter(a => a.presupuesto_id === state.presupuestoActivo);
@@ -5128,7 +5124,7 @@ function imprimirPlanCortes(presupuestoId) {
   if (!p) return;
   const abs = state.aberturas.filter(a => a.presupuesto_id === presupuestoId);
   const precioKg = getPrecioKgPresupuesto(p);
-  const criterio = state._criterioPrecio || p.criterio_precio || 'proporcional';
+  const criterio = state._criterioPrecio || p.criterio_precio || 'barra_completa';
   const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
 
   // ── 1. Consolidated bin packing for profiles ─────────────────────────────
@@ -5427,7 +5423,7 @@ function imprimirPresupuesto(id) {
   if (!p) return;
   const abs = state.aberturas.filter(a => a.presupuesto_id === id);
   const markup = Number(p.markup || 0);
-  const criterio = state._criterioPrecio || 'proporcional';
+  const criterio = state._criterioPrecio || 'barra_completa';
   const precioKg = getPrecioKgPresupuesto(p);
 
   // Calcular costos con el criterio activo
