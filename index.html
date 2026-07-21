@@ -1463,7 +1463,7 @@ function _renderListaCards() {
     const precioKg = getPrecioKgPresupuesto(p);
     let totalMostrar = 0;
     if (abs.length > 0) {
-      const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+      const { costos } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
       const subtotal = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
       totalMostrar = subtotal * (1 + Number(p.markup || 0) / 100);
     }
@@ -1519,7 +1519,7 @@ function renderLista() {
     const precioKg = getPrecioKgPresupuesto(p);
     let totalMostrar = 0;
     if (abs.length > 0) {
-      const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+      const { costos } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
       const subtotal = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
       totalMostrar = subtotal * (1 + Number(p.markup || 0) / 100);
     }
