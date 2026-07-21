@@ -5473,6 +5473,15 @@ function imprimirPresupuesto(id) {
   const _cobrarSobPdf = criterio === 'proporcional' && p.cobrar_sobrante;
   const _costoSobPdf = _cobrarSobPdf ? (p.costo_sobrante || 0) : 0;
   const totalFinal = subtotal * (1 + markup / 100) + _costoSobPdf;
+  // Prorrateo del sobrante entre aberturas (proporcional al costo de cada una)
+  const _sobrantePorAb = {};
+  if (_costoSobPdf > 0 && subtotal > 0) {
+    for (const a of abs) {
+      const c = costos[a.id] || {};
+      const costoAb = (c.perfiles || 0) + (c.vidrios || 0) + (c.herrajes || 0);
+      _sobrantePorAb[a.id] = _costoSobPdf * (costoAb / subtotal);
+    }
+  }
 
   const aberturasHtml = abs.map((a, i) => {
 	const _nSecs = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones.length : (tryParse(a.secciones, []) || []).length) : 0;
@@ -5521,7 +5530,7 @@ function imprimirPresupuesto(id) {
     const c = costos[a.id] || { perfiles: 0, vidrios: 0, herrajes: 0 };
     // costos ya incluye cant (mmPorAb multiplica por cant) → precioTotal directo
     const costoTotal = (isNaN(c.perfiles)?0:c.perfiles) + (isNaN(c.vidrios)?0:c.vidrios) + (isNaN(c.herrajes)?0:c.herrajes);
-    const precioTotal = costoTotal * (1 + markup / 100);
+    const precioTotal = costoTotal * (1 + markup / 100) + (_sobrantePorAb[a.id] || 0);
     const cant = Number(a.cantidad) || 1;
     const precioUnitario = precioTotal / cant;
     const seccionesListPdf = a.es_modulo && a.secciones && a.secciones.length
@@ -5598,9 +5607,7 @@ function imprimirPresupuesto(id) {
     +'</div>'
     +'<div style="font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:12px;font-weight:700;">Detalle de aberturas ('+abs.length+')</div>'
     +(aberturasHtml||'<p style="color:#94a3b8;padding:20px 0;">Sin aberturas cargadas</p>')
-    +(_costoSobPdf > 0 ? '<div style="margin-top:16px;padding:10px 24px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;display:flex;justify-content:space-between;font-size:12px;color:#64748b;font-style:italic;">'
-      +'<span>Sobrante al costo (sin ganancia)</span><span style="font-family:monospace;">'+fmt(_costoSobPdf)+'</span></div>' : '')
-    +'<div style="margin-top:12px;padding:20px 24px;background:#0f172a;border-radius:12px;display:flex;justify-content:flex-end;align-items:center;">'
+    +'<div style="margin-top:28px;padding:20px 24px;background:#0f172a;border-radius:12px;display:flex;justify-content:flex-end;align-items:center;">'
       +'<div><div style="font-size:11px;color:#94a3b8;text-align:right;margin-bottom:2px;">TOTAL</div>'
       +'<div style="font-size:26px;font-weight:800;color:#00b37e;">'+fmt(totalFinal)+'</div></div>'
     +'</div>'
