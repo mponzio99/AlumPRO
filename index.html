@@ -1356,6 +1356,8 @@ async function toggleCobrarSobrante(checked) {
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
   if (!p) return;
   p.cobrar_sobrante = checked;
+  const _wrap = document.querySelector('.resumen-row')?.closest('.card');
+  if (_wrap) { _wrap.style.opacity = '0.5'; _wrap.style.pointerEvents = 'none'; }
   await sheetsUpdateRow(SHEETS.presupuestos, p.id, { cobrar_sobrante: checked ? '1' : '0' }).catch(() => {});
   await recalcularTotal();
   render();
@@ -1465,7 +1467,8 @@ function _renderListaCards() {
     if (abs.length > 0) {
       const { costos } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
       const subtotal = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
-      totalMostrar = subtotal * (1 + Number(p.markup || 0) / 100);
+      const _sobLista = (p.criterio_precio === 'proporcional' && p.cobrar_sobrante) ? (Number(p.costo_sobrante) || 0) : 0;
+      totalMostrar = subtotal * (1 + Number(p.markup || 0) / 100) + _sobLista;
     }
     const total = fmt(totalMostrar);
     return `
@@ -2957,6 +2960,8 @@ async function actualizarMarkup(val) {
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
   if (!p) return;
   const mk = parseFloat(val) || 0;
+  const _mkBtn = document.getElementById('markupInput');
+  if (_mkBtn) { _mkBtn.style.opacity = '0.5'; _mkBtn.disabled = true; }
   const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
   const sub = abs.reduce((s, a) => {
     const cant = Number(a.cantidad) || 1;
