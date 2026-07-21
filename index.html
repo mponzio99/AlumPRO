@@ -1595,13 +1595,14 @@ function renderDetalle() {
 
   // Calcular costos en tiempo real usando calcularCostoAberturas (respeta cantidad)
   const precioKgHeader = getPrecioKgPresupuesto(p);
-  const { costos: costosHeader } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgHeader, 'proporcional', state.umbral_sobrante);
+  const { costos: costosHeader } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgHeader, state._criterioPrecio || 'barra_completa', state.umbral_sobrante);
   const costoP = Object.values(costosHeader).reduce((s, c) => s + c.perfiles, 0);
   const costoV = Object.values(costosHeader).reduce((s, c) => s + c.vidrios, 0);
   const costoH = Object.values(costosHeader).reduce((s, c) => s + c.herrajes, 0);
   const subtotal = costoP + costoV + costoH;
   const markup = Number(p.markup || 0);
-  const totalFinal = subtotal * (1 + markup / 100);
+  const _cobrarSobHeader = (state._criterioPrecio === 'proporcional') && p.cobrar_sobrante;
+  const totalFinal = subtotal * (1 + markup / 100) + (_cobrarSobHeader ? (p.costo_sobrante || 0) : 0);
 
   const estadoOpts = ESTADOS.map(e => `<option value="${e.id}" ${p.estado===e.id?'selected':''}>${e.label}</option>`).join('');
 
@@ -1887,7 +1888,8 @@ function renderDetalle() {
     const costoVR = Object.values(costosR).reduce((s, c) => s + c.vidrios * 1, 0);
     const costoHR = Object.values(costosR).reduce((s, c) => s + c.herrajes * 1, 0);
     const subtotalR = costoPR + costoVR + costoHR;
-    const totalFinalR = subtotalR * (1 + markup / 100);
+    const _cobrarSobR = criterioR === 'proporcional' && presR?.cobrar_sobrante;
+    const totalFinalR = subtotalR * (1 + markup / 100) + (_cobrarSobR ? (presR?.costo_sobrante || 0) : 0);
 
     const criterioOpts2 = [
       { id: 'proporcional',   label: 'Precio proporcional al uso' },
@@ -5468,7 +5470,9 @@ function imprimirPresupuesto(id) {
   // Calcular costos con el criterio activo
   const { costos } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
   const subtotal = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
-  const totalFinal = subtotal * (1 + markup / 100);
+  const _cobrarSobPdf = criterio === 'proporcional' && p.cobrar_sobrante;
+  const _costoSobPdf = _cobrarSobPdf ? (p.costo_sobrante || 0) : 0;
+  const totalFinal = subtotal * (1 + markup / 100) + _costoSobPdf;
 
   const aberturasHtml = abs.map((a, i) => {
 	const _nSecs = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones.length : (tryParse(a.secciones, []) || []).length) : 0;
@@ -5594,7 +5598,9 @@ function imprimirPresupuesto(id) {
     +'</div>'
     +'<div style="font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:12px;font-weight:700;">Detalle de aberturas ('+abs.length+')</div>'
     +(aberturasHtml||'<p style="color:#94a3b8;padding:20px 0;">Sin aberturas cargadas</p>')
-    +'<div style="margin-top:28px;padding:20px 24px;background:#0f172a;border-radius:12px;display:flex;justify-content:flex-end;align-items:center;">'
+    +(_costoSobPdf > 0 ? '<div style="margin-top:16px;padding:10px 24px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;display:flex;justify-content:space-between;font-size:12px;color:#64748b;font-style:italic;">'
+      +'<span>Sobrante al costo (sin ganancia)</span><span style="font-family:monospace;">'+fmt(_costoSobPdf)+'</span></div>' : '')
+    +'<div style="margin-top:12px;padding:20px 24px;background:#0f172a;border-radius:12px;display:flex;justify-content:flex-end;align-items:center;">'
       +'<div><div style="font-size:11px;color:#94a3b8;text-align:right;margin-bottom:2px;">TOTAL</div>'
       +'<div style="font-size:26px;font-weight:800;color:#00b37e;">'+fmt(totalFinal)+'</div></div>'
     +'</div>'
