@@ -1679,12 +1679,6 @@ function renderDetalle() {
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
         <span style="font-size:13px;color:var(--text2);font-weight:600;">Criterio de precio:</span>
         <select style="flex:1;max-width:280px;" onchange="setCriterioPrecio(this.value)">${criterioOpts}</select>
-        ${criterio === 'proporcional' ? `
-          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer;margin-left:8px;">
-            <input type="checkbox" ${p?.cobrar_sobrante ? 'checked' : ''} onchange="toggleCobrarSobrante(this.checked)"
-              style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;">
-            Cobrar sobrante al costo
-          </label>` : ''}
       </div>
       ${abCards}
       <div id="addAbWrap"></div>
@@ -1902,9 +1896,15 @@ function renderDetalle() {
 
     tabContent = `
       <div style="max-width:520px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
           <span style="font-size:13px;color:var(--text2);font-weight:600;white-space:nowrap;">Criterio:</span>
           <select style="flex:1;" onchange="setCriterioPrecio(this.value)">${criterioOpts2}</select>
+          ${criterioR === 'proporcional' ? `
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer;margin-left:8px;">
+              <input type="checkbox" ${presR?.cobrar_sobrante ? 'checked' : ''} onchange="toggleCobrarSobrante(this.checked)"
+                style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;">
+              Cobrar sobrante al costo
+            </label>` : ''}
         </div>
         <div class="card">
           <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:18px">Resumen de costos</div>
