@@ -976,6 +976,23 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
     }
   }
 
+  // Calcular costo del sobrante de barras NUEVAS (solo en proporcional)
+  let costoSobranteNuevas = 0;
+  if (criterio === 'proporcional') {
+    for (const [k, barras] of Object.entries(barrasAcum)) {
+      const perfil = perfilesDB.find(p => p.codigo === k || p.id === k);
+      if (!perfil) continue;
+      const largoBarra = Number(perfil.largo_barra || 6000);
+      const costoPorBarra = (parseFloat(perfil.peso_tira) || 0) * (parseFloat(precioKg) || 0);
+      const precioPorMm = costoPorBarra / largoBarra;
+      for (const barra of barras) {
+        if (!barra.nueva) continue; // solo barras nuevas abiertas en este presupuesto
+        const resto = barra.resto || 0;
+        if (resto > 0) costoSobranteNuevas += precioPorMm * resto;
+      }
+    }
+  }
+
   // Vidrios y herrajes
   for (const a of abs) {
     const cant = Number(a.cantidad) || 1;
@@ -1018,7 +1035,7 @@ function calcularCostoAberturas(abs, perfilesDB, herrajesDB, precioKg, criterio,
     }
   }
 
-  return costos;
+  return { costos, costoSobranteNuevas };
 }
 
 
@@ -1335,6 +1352,15 @@ function setUmbralSobrante(valor) {
   toast('Umbral actualizado');
 }
 
+async function toggleCobrarSobrante(checked) {
+  const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
+  if (!p) return;
+  p.cobrar_sobrante = checked;
+  await sheetsUpdateRow(SHEETS.presupuestos, p.id, { cobrar_sobrante: checked ? '1' : '0' }).catch(() => {});
+  await recalcularTotal();
+  render();
+}
+
 function setCriterioPrecio(valor) {
   state._criterioPrecio = valor;
   const p = state.presupuestos.find(x => x.id === state.presupuestoActivo);
@@ -1351,7 +1377,7 @@ async function _guardarCostosConCriterio(p, criterio) {
   const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
   if (!abs.length) return;
   const precioKg = getPrecioKgPresupuesto(p);
-  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+  const { costos } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
   // Update each abertura in state and Sheet
   const updates = abs.map(a => {
     const c = costos[a.id] || {};
@@ -1569,7 +1595,7 @@ function renderDetalle() {
 
   // Calcular costos en tiempo real usando calcularCostoAberturas (respeta cantidad)
   const precioKgHeader = getPrecioKgPresupuesto(p);
-  const costosHeader = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgHeader, 'proporcional', state.umbral_sobrante);
+  const { costos: costosHeader } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgHeader, 'proporcional', state.umbral_sobrante);
   const costoP = Object.values(costosHeader).reduce((s, c) => s + c.perfiles, 0);
   const costoV = Object.values(costosHeader).reduce((s, c) => s + c.vidrios, 0);
   const costoH = Object.values(costosHeader).reduce((s, c) => s + c.herrajes, 0);
@@ -1650,9 +1676,15 @@ function renderDetalle() {
     ].map(o => `<option value="${o.id}" ${criterio===o.id?'selected':''}>${o.label}</option>`).join('');
 
     tabContent = `
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
         <span style="font-size:13px;color:var(--text2);font-weight:600;">Criterio de precio:</span>
         <select style="flex:1;max-width:280px;" onchange="setCriterioPrecio(this.value)">${criterioOpts}</select>
+        ${criterio === 'proporcional' ? `
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer;margin-left:8px;">
+            <input type="checkbox" ${p?.cobrar_sobrante ? 'checked' : ''} onchange="toggleCobrarSobrante(this.checked)"
+              style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;">
+            Cobrar sobrante al costo
+          </label>` : ''}
       </div>
       ${abCards}
       <div id="addAbWrap"></div>
@@ -1856,7 +1888,7 @@ function renderDetalle() {
     const presR = state.presupuestos.find(x => x.id === state.presupuestoActivo);
     const precioKgR = getPrecioKgPresupuesto(presR);
     const criterioR = state._criterioPrecio || 'barra_completa';
-    const costosR = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgR, criterioR, state.umbral_sobrante);
+    const { costos: costosR } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKgR, criterioR, state.umbral_sobrante);
     const costoPR = Object.values(costosR).reduce((s, c) => s + c.perfiles * 1, 0);
     const costoVR = Object.values(costosR).reduce((s, c) => s + c.vidrios * 1, 0);
     const costoHR = Object.values(costosR).reduce((s, c) => s + c.herrajes * 1, 0);
@@ -1879,6 +1911,11 @@ function renderDetalle() {
           <div class="resumen-row"><span>Perfiles de aluminio</span><span style="font-family:'DM Mono',monospace">${fmt(costoPR)}</span></div>
           <div class="resumen-row"><span>Vidrios</span><span style="font-family:'DM Mono',monospace">${fmt(costoVR)}</span></div>
           <div class="resumen-row"><span>Herrajes</span><span style="font-family:'DM Mono',monospace">${fmt(costoHR)}</span></div>
+          ${criterioR === 'proporcional' && presR?.cobrar_sobrante && presR?.costo_sobrante > 0 ? `
+          <div class="resumen-row" style="color:var(--text2);font-style:italic;">
+            <span>Sobrante al costo (sin ganancia)</span>
+            <span style="font-family:'DM Mono',monospace">${fmt(presR.costo_sobrante)}</span>
+          </div>` : ''}
           <div class="resumen-row" style="font-weight:700;border-top:1px solid var(--border2);margin-top:8px;padding-top:14px">
             <span>Subtotal materiales</span><span style="font-family:'DM Mono',monospace">${fmt(subtotalR)}</span>
           </div>
@@ -3477,12 +3514,14 @@ async function recalcularTotal() {
   if (!p) return;
   const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
   const precioKg = getPrecioKgPresupuesto(p);
-  // Usar calcularCostoAberturas para tener en cuenta cantidad correctamente
-  const costos = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'barra_completa', state.umbral_sobrante);
+  const { costos, costoSobranteNuevas } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, state._criterioPrecio || 'barra_completa', state.umbral_sobrante);
   const sub = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
-  const total = sub * (1 + Number(p.markup||0) / 100);
+  const cobrarSobrante = (state._criterioPrecio === 'proporcional') && p.cobrar_sobrante;
+  const costoSobrante = cobrarSobrante ? (costoSobranteNuevas || 0) : 0;
+  const total = sub * (1 + Number(p.markup||0) / 100) + costoSobrante;
   p.total_final = total;
-  await sheetsUpdateRow(SHEETS.presupuestos, p.id, { total_final: total });
+  p.costo_sobrante = costoSobrante;
+  await sheetsUpdateRow(SHEETS.presupuestos, p.id, { total_final: total, costo_sobrante: costoSobrante });
 }
 
 async function eliminarPresupuesto(id) {
@@ -3656,7 +3695,7 @@ async function crearPresupuesto() {
   if (!cliente || !obra) { toast('Completá cliente y obra', 'error'); return; }
   setBtnLoading(btn, true, 'Creando...');
   try {
-    const p = { id: genId(), cliente, obra, fecha, estado: 'generado', markup: 60, total_final: 0, kanban_col: '', linea_id, linea: linea?.nombre || linea_id, tipo_al, color_al, precio_kg };
+    const p = { id: genId(), cliente, obra, fecha, estado: 'generado', markup: 60, total_final: 0, kanban_col: '', linea_id, linea: linea?.nombre || linea_id, tipo_al, color_al, precio_kg, cobrar_sobrante: false, costo_sobrante: 0 };
     state.presupuestos.unshift(p);
     await sheetsAppend(SHEETS.presupuestos, p);
     closeModal();
