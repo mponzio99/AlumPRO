@@ -1441,7 +1441,6 @@ function render() {
 // ============================================================
 function _renderListaCards() {
   const _busqueda = (state._presupuestosBusqueda || '').toLowerCase().trim();
-  const criterio = state._criterioPrecio || 'barra_completa';
   const ps = state.presupuestos
     .filter(p => {
       if (!_busqueda) return true;
@@ -1470,9 +1469,10 @@ function _renderListaCards() {
     const precioKg = getPrecioKgPresupuesto(p);
     let totalMostrar = 0;
     if (abs.length > 0) {
-      const { costos } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+      const _criterioP = p.criterio_precio || 'barra_completa';
+      const { costos } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, _criterioP, state.umbral_sobrante);
       const subtotal = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
-      const _sobLista = (p.criterio_precio === 'proporcional' && p.cobrar_sobrante) ? (Number(p.costo_sobrante) || 0) : 0;
+      const _sobLista = (_criterioP === 'proporcional' && p.cobrar_sobrante) ? (Number(p.costo_sobrante) || 0) : 0;
       totalMostrar = subtotal * (1 + Number(p.markup || 0) / 100) + _sobLista;
     }
     const total = fmt(totalMostrar);
@@ -1521,15 +1521,16 @@ function renderLista() {
       const fa = new Date(a.fecha || 0), fb = new Date(b.fecha || 0);
       return isNaN(fa) || isNaN(fb) ? 0 : fb - fa;
     });
-  const criterio = state._criterioPrecio || 'barra_completa';
   const cards = ps.length ? ps.map(p => {
     const abs = state.aberturas.filter(a => a.presupuesto_id === p.id);
     const precioKg = getPrecioKgPresupuesto(p);
     let totalMostrar = 0;
     if (abs.length > 0) {
-      const { costos } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, criterio, state.umbral_sobrante);
+      const _criterioP = p.criterio_precio || 'barra_completa';
+      const { costos } = calcularCostoAberturas(abs, state.perfiles, state.herrajes, precioKg, _criterioP, state.umbral_sobrante);
       const subtotal = Object.values(costos).reduce((s, c) => s + c.perfiles + c.vidrios + c.herrajes, 0);
-      totalMostrar = subtotal * (1 + Number(p.markup || 0) / 100);
+      const _sobLista = (_criterioP === 'proporcional' && p.cobrar_sobrante) ? (Number(p.costo_sobrante) || 0) : 0;
+      totalMostrar = subtotal * (1 + Number(p.markup || 0) / 100) + _sobLista;
     }
     const total = fmt(totalMostrar);
     return `
