@@ -3742,7 +3742,8 @@ function _renderModuloCard(a, c, cTotal) {
   if (!Array.isArray(secciones)) secciones = tryParse(secciones, []);
   if (!Array.isArray(secciones)) secciones = [];
   const expanded = !!(state._moduloExpanded && state._moduloExpanded[a.id]);
-  const isVert = (a.modulo_orient || 'h') === 'v';
+  const _secsHaveAltoCard = secciones.length > 0 && secciones.every(s => Number(s.alto) > 0);
+  const isVert = (a.modulo_orient === 'v') || (_secsHaveAltoCard && !secciones.every(s => Number(s.ancho) > 0));
   const svgMod = isVert
     ? svgModuloV(secciones, a.ancho, 120, 180)
     : svgModulo(secciones, a.alto, 180, 100);
@@ -5111,30 +5112,28 @@ function svgModulo(secsRaw, altoMm, maxW, maxH) {
 // SVG para módulo vertical — secciones apiladas de arriba a abajo
 function svgModuloV(secciones, anchomm, maxW, maxH) {
   if (!secciones || !secciones.length) return '';
-  maxW = maxW||120; maxH = maxH||200;
-  const altoTotal = secciones.reduce((s,sec)=>s+Number(sec.alto||0),0);
+  maxW = maxW || 120; maxH = maxH || 200;
+  const altoTotal = secciones.reduce((s, sec) => s + Number(sec.alto || 0), 0);
+  if (!altoTotal) return '';
   const ratio = anchomm / altoTotal;
   let W, H;
-  if (ratio >= 1) { W=maxW; H=Math.round(maxW/ratio); if(H>maxH){H=maxH;W=Math.round(maxH*ratio);} }
-  else { H=maxH; W=Math.round(maxH*ratio); if(W>maxW){W=maxW;H=Math.round(maxW/ratio);} }
-  W=Math.max(W,40); H=Math.max(H,40);
-  const pad=5, fc='#1e3a5f', gc='#0ea5e9', gf='#dbeafe';
-  const sw=Math.max(2,Math.round(Math.min(W,H)/30));
-  const iH=H-pad*2, totalH=H+18;
-  let interior=''; let y=pad;
-  for (const sec of secciones) {
-    const secH=Math.round((Number(sec.alto||0)/altoTotal)*iH);
-    interior+='<rect x="'+pad+'" y="'+y+'" width="'+(W-pad*2)+'" height="'+secH+'" fill="'+gf+'" stroke="'+gc+'" stroke-width="1.5"/>';
-    const label=(sec.nombre||'').substring(0,10);
-    interior+='<text x="'+(W/2)+'" y="'+(y+secH/2+4)+'" text-anchor="middle" font-size="7" fill="'+fc+'" font-family="monospace">'+label+'</text>';
-    y+=secH;
-    if(y<H-pad) interior+='<line x1="'+pad+'" y1="'+y+'" x2="'+(W-pad)+'" y2="'+y+'" stroke="'+fc+'" stroke-width="'+sw+'"/>';
-  }
-  return '<svg width="'+W+'" height="'+totalH+'" viewBox="0 0 '+W+' '+totalH+'" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;">'
-    +'<rect x="0" y="0" width="'+W+'" height="'+H+'" rx="2" fill="#f8fafc" stroke="'+fc+'" stroke-width="'+sw+'"/>'
-    +interior
-    +'<text x="'+(W/2)+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="8" fill="'+fc+'" font-family="monospace" font-weight="600">'+anchomm+'x'+altoTotal+'mm</text>'
-    +'</svg>';
+  if (ratio >= 1) { W = maxW; H = Math.round(maxW / ratio); if (H > maxH) { H = maxH; W = Math.round(maxH * ratio); } }
+  else { H = maxH; W = Math.round(maxH * ratio); if (W > maxW) { W = maxW; H = Math.round(maxW / ratio); } }
+  W = Math.max(W, 40); H = Math.max(H, 40);
+
+  // Dibujar cada sección usando svgAbertura, apiladas verticalmente
+  return '<div style="display:flex;flex-direction:column;gap:0;align-items:center;">'
+    + secciones.map((sec, si) => {
+        const secHpx = Math.max(20, Math.round((Number(sec.alto || 0) / altoTotal) * H));
+        const _sp = (typeof sec.params === 'object' ? sec.params : null) || tryParse(sec.params, {}) || {};
+        const secSvg = svgAbertura(sec.tipologia_id, anchomm, Number(sec.alto || 0), W, secHpx, _sp);
+        return '<div style="display:flex;flex-direction:row;align-items:center;width:100%;">'
+          + secSvg
+          + '<div style="font-size:8px;color:#64748b;margin-left:4px;white-space:nowrap;">'
+          + anchomm + 'x' + sec.alto + 'mm</div>'
+          + '</div>';
+      }).join('')
+    + '</div>';
 }
 
 // Convierte SVG a PNG data URI via Canvas (para Word)
@@ -5505,7 +5504,9 @@ function imprimirPresupuesto(id) {
 	const _secsArr = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones : (tryParse(a.secciones, []) || [])) : [];
 	const svgContent = a.es_modulo
       ? ((() => {
-          const _isVert = (a.modulo_orient || 'h') === 'v';
+          // Detectar vertical: orient='v' explícito, o secciones tienen alto propio (módulos viejos)
+          const _secsHaveAlto = _secsArr.length > 0 && _secsArr.every(s => Number(s.alto) > 0);
+          const _isVert = (a.modulo_orient === 'v') || (_secsHaveAlto && !_secsArr.every(s => Number(s.ancho) > 0));
           if (_isVert) {
             // Módulo vertical: usar svgModuloV
             const _secsV = _secsArr.map(s => ({ ...s, alto: Number(s.alto) || Number(a.alto) }));
