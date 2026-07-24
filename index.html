@@ -794,8 +794,13 @@ function calcularVidriosModulo(a) {
       ? (v.formula_alto_dvh  || v.formula_alto_vcomon  || v.formula_alto  || '')
       : (v.formula_alto_vcomon  || v.formula_alto  || '');
     if (!fA || !fH) continue;
+    const _secParams = tryParse(sec.params, {});
+    const _pctTabSec = Number(_secParams?.pct_tablillas) || 0;
+    if (_pctTabSec >= 100) continue; // 100% tablillas = sin vidrio
     const _altoRaw = Number(sec.alto) || alto;
-    const altoSec = Math.max(0, _altoRaw);
+    const _altoBase = Math.max(0, _altoRaw);
+    if (_altoBase <= 0) continue;
+    const altoSec = _pctTabSec > 0 ? Math.round(_altoBase * (1 - _pctTabSec / 100)) : _altoBase;
     if (altoSec <= 0) continue;
     const vA = evalFormula(fA, Number(sec.ancho), altoSec, N);
     const vH = evalFormula(fH, Number(sec.ancho), altoSec, N);
@@ -5500,6 +5505,13 @@ function imprimirPresupuesto(id) {
 	const _secsArr = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones : (tryParse(a.secciones, []) || [])) : [];
 	const svgContent = a.es_modulo
       ? ((() => {
+          const _isVert = (a.modulo_orient || 'h') === 'v';
+          if (_isVert) {
+            // Módulo vertical: usar svgModuloV
+            const _secsV = _secsArr.map(s => ({ ...s, alto: Number(s.alto) || Number(a.alto) }));
+            return svgModuloV(_secsV, Number(a.ancho), 120, 180);
+          }
+          // Módulo horizontal: secciones lado a lado
           const _maxTotalW = 200, _maxH = 110;
           const _anchoTotal = _secsArr.reduce((s, sec) => s + Number(sec.ancho), 0);
           const _altoMm = Number(a.alto);
@@ -5513,9 +5525,8 @@ function imprimirPresupuesto(id) {
                 const _sp = tryParse(sec.params, {}) || {};
                 const _secWpx = Math.max(20, Math.round((Number(sec.ancho) / _anchoTotal) * _totalW));
                 const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), _altoMm, _secWpx, _sharedH, _sp);
-                const _secIdx2 = _secsArr.indexOf(sec);
-				const _isLast = _si === _secsArr.length - 1;
-				return '<div style="display:flex;flex-direction:column;align-items:center;">'
+                const _isLast = _si === _secsArr.length - 1;
+                return '<div style="display:flex;flex-direction:column;align-items:center;">'
                   + _secSvg
                   + '<div style="font-size:8px;color:#64748b;text-align:center;margin-top:2px;white-space:nowrap;">' + sec.ancho + 'x' + a.alto + 'mm</div>'
                   + '</div>';
