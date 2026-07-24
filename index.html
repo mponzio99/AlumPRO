@@ -5136,19 +5136,22 @@ function svgModuloV(secciones, anchomm, maxW, maxH, frameColorOverride) {
   const fc = '#1e3a5f';
   const totalH = H + 18;
 
-  // Un solo SVG con secciones apiladas (igual que svgModulo pero vertical)
+  // Un solo SVG con secciones apiladas usando <image> + viewBox de cada sección
   let interior = '';
   let yOffset = 0;
   for (const sec of secciones) {
     const secHpx = Math.max(10, Math.round((Number(sec.alto || 0) / altoTotal) * H));
     const _sp = (typeof sec.params === 'object' ? sec.params : null) || tryParse(sec.params, {}) || {};
     const secSvg = svgAbertura(sec.tipologia_id, anchomm, Number(sec.alto || 0), W, secHpx, _sp);
-    // Extraer contenido interno del SVG (sin etiqueta svg exterior ni label de medidas)
-    const svgContent = secSvg
+    // Extraer viewBox del SVG generado para usarlo como nested svg
+    const vbMatch = secSvg.match(/viewBox="([^"]+)"/);
+    const vb = vbMatch ? vbMatch[1] : ('0 0 ' + W + ' ' + secHpx);
+    // Usar <svg> anidado con y offset — esto respeta las coordenadas internas
+    const innerContent = secSvg
       .replace(/<svg[^>]*>/, '')
-      .replace(/<\/svg>/, '')
+      .replace(/<\/svg>\s*$/, '')
       .replace(/<text[^>]*>[\s\S]*?<\/text>/g, '');
-    interior += '<g transform="translate(0,' + yOffset + ')">' + svgContent + '</g>';
+    interior += '<svg x="0" y="' + yOffset + '" width="' + W + '" height="' + secHpx + '" viewBox="' + vb + '">' + innerContent + '</svg>';
     yOffset += secHpx;
   }
 
