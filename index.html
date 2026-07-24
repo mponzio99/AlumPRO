@@ -5134,32 +5134,30 @@ function svgModuloV(secciones, anchomm, maxW, maxH, frameColorOverride) {
   else { H = maxH; W = Math.round(maxH * ratio); if (W > maxW) { W = maxW; H = Math.round(maxW / ratio); } }
   W = Math.max(W, 40); H = Math.max(H, 40);
   const fc = '#1e3a5f';
+  const sw = Math.max(2, Math.round(Math.min(W, H) / 30));
   const totalH = H + 18;
 
-  // Un solo SVG con secciones apiladas usando <image> + viewBox de cada sección
+  // Igual que svgModulo horizontal pero vertical:
+  // Extraer contenido de cada seccion y posicionarlo con translate
   let interior = '';
-  let yOffset = 0;
+  let yOff = 0;
   for (const sec of secciones) {
     const secHpx = Math.max(10, Math.round((Number(sec.alto || 0) / altoTotal) * H));
-    const _sp = (typeof sec.params === 'object' ? sec.params : null) || tryParse(sec.params, {}) || {};
+    const _sp = (typeof sec.params === 'object' && sec.params !== null) ? sec.params : (tryParse(sec.params, {}) || {});
+    // Generar SVG de la seccion con dimensiones exactas
     const secSvg = svgAbertura(sec.tipologia_id, anchomm, Number(sec.alto || 0), W, secHpx, _sp);
-    // Extraer viewBox del SVG generado para usarlo como nested svg
-    const vbMatch = secSvg.match(/viewBox="([^"]+)"/);
-    const vb = vbMatch ? vbMatch[1] : ('0 0 ' + W + ' ' + secHpx);
-    // Generar SVG sin marco exterior y sin label
-    const secSvgInner = svgAbertura(sec.tipologia_id, anchomm, Number(sec.alto || 0), W, secHpx, _sp, null, true);
-    const innerContent = secSvgInner
-      .replace(/<svg[^>]*>/, '')
-      .replace(/<\/svg>\s*$/, '')
-      .replace(/<text[^>]*>[\s\S]*?<\/text>/g, '');
-    interior += '<svg x="0" y="' + yOffset + '" width="' + W + '" height="' + secHpx + '" viewBox="' + vb + '">' + innerContent + '</svg>';
-    yOffset += secHpx;
+    // Extraer solo el contenido interior (igual que svgModulo horizontal)
+    const svgContent = secSvg.replace(/<svg[^>]*>/, '').replace(/<\/svg>/, '').replace(/<text[^>]*>[\s\S]*?<\/text>/g, '');
+    interior += '<g transform="translate(0,' + yOff + ')">' + svgContent + '</g>';
+    // Linea divisora entre secciones
+    if (yOff + secHpx < H) {
+      interior += '<line x1="0" y1="' + (yOff + secHpx) + '" x2="' + W + '" y2="' + (yOff + secHpx) + '" stroke="' + fc + '" stroke-width="' + sw + '"/>';
+    }
+    yOff += secHpx;
   }
 
-  const sw = Math.max(2, Math.round(Math.min(W, H) / 30));
   return '<svg width="' + W + '" height="' + totalH + '" viewBox="0 0 ' + W + ' ' + totalH + '" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;">'
     + interior
-    // Marco exterior único que envuelve todas las secciones
     + '<rect x="0" y="0" width="' + W + '" height="' + H + '" rx="2" fill="none" stroke="' + fc + '" stroke-width="' + sw + '"/>'
     + '<text x="' + (W/2) + '" y="' + (totalH-2) + '" text-anchor="middle" font-size="8" fill="' + fc + '" font-family="monospace" font-weight="600">' + anchomm + 'x' + altoTotal + 'mm</text>'
     + '</svg>';
