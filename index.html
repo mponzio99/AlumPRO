@@ -5151,7 +5151,7 @@ function svgModuloV(secciones, anchomm, maxW, maxH, frameColorOverride) {
       .replace(/<svg[^>]*>/, '')
       .replace(/<\/svg>\s*$/, '')
       .replace(/<text[^>]*>[\s\S]*?<\/text>/g, '')
-      .replace(/^<rect x="0" y="0"[^\/]*\/>/, ''); // quitar marco exterior
+      .replace(/<rect x="0" y="0"[^>]*fill="#f8fafc"[^>]*\/>/, ''); // quitar marco exterior
     interior += '<svg x="0" y="' + yOffset + '" width="' + W + '" height="' + secHpx + '" viewBox="' + vb + '">' + innerContent + '</svg>';
     yOffset += secHpx;
   }
