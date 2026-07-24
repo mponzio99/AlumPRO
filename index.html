@@ -3742,7 +3742,7 @@ function _renderModuloCard(a, c, cTotal) {
   if (!Array.isArray(secciones)) secciones = tryParse(secciones, []);
   if (!Array.isArray(secciones)) secciones = [];
   const expanded = !!(state._moduloExpanded && state._moduloExpanded[a.id]);
-  const isVert = (a.modulo_orient === 'v') || (secciones.length > 0 && secciones.every(s => Number(s.alto) > 0) && secciones.some(s => !Number(s.ancho)));
+  const isVert = (a.modulo_orient === 'v');
   const svgMod = isVert
     ? svgModuloV(secciones, a.ancho, 120, 180)
     : svgModulo(secciones, a.alto, 180, 100);
@@ -5526,7 +5526,7 @@ function imprimirPresupuesto(id) {
 	const _secsArr = a.es_modulo ? (Array.isArray(a.secciones) ? a.secciones : (tryParse(a.secciones, []) || [])) : [];
 	const svgContent = a.es_modulo
       ? ((() => {
-          const _isVert = (a.modulo_orient === 'v') || (_secsArr.length > 0 && _secsArr.every(s => Number(s.alto) > 0) && _secsArr.some(s => !Number(s.ancho)));
+          const _isVert = (a.modulo_orient === 'v');
           if (_isVert) {
             // Módulo vertical: usar svgModuloV
             const _secsV = _secsArr.map(s => ({ ...s, alto: Number(s.alto) || Number(a.alto) }));
