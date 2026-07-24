@@ -4825,7 +4825,21 @@ async function crearStock() {
 // ============================================================
 // SVG DESCRIPTIVOS POR TIPO DE ABERTURA (con proporciones reales)
 // ============================================================
-function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
+function _resolverColorAluminio(colorNombre) {
+  if (!colorNombre) return null;
+  const n = colorNombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  if (n.includes('negro') || n.includes('black') || n.includes('grafito') || n.includes('antracita')) return '#2d2d2d';
+  if (n.includes('blanco') || n.includes('white')) return '#d0d0d0';
+  if (n.includes('natural') || n.includes('plata') || n.includes('silver') || n.includes('aluminio')) return '#8a9bb0';
+  if (n.includes('bronce') || n.includes('bronze') || n.includes('dorado') || n.includes('oro')) return '#8b6f47';
+  if (n.includes('gris') || n.includes('grey') || n.includes('gray')) return '#606060';
+  if (n.includes('champagne') || n.includes('arena') || n.includes('beige')) return '#b8a898';
+  if (n.includes('madera') || n.includes('wood') || n.includes('simil')) return '#8B6340';
+  if (n.includes('aluar')) return '#c8c8c8';
+  return null;
+}
+
+function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params, frameColorOverride) {
   // Resolver tipo de dibujo para tipologías custom
   const _BUILTINS = ['ventana-corrediza','puerta-abrir','puerta-corrediza','puerta-ventana-corrediza','pano-fijo','ventana-abrir','banderola','ventana-dvh','pano-fijo-dvh','puerta-ventana-abrir'];
   if (!_BUILTINS.includes(tipo_id)) {
@@ -4867,9 +4881,9 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params) {
   const iW = W - pad*2;  // interior width
   const iH = H - pad*2;  // interior height
   const cx = W/2, cy = H/2;
-  const fc = '#1e3a5f';   // frame color
-  const gc = '#0ea5e9';   // glass/detail color
-  const gf = '#dbeafe';   // glass fill
+  const fc = frameColorOverride || '#1e3a5f';   // frame color
+  const gc = frameColorOverride ? frameColorOverride + 'cc' : '#0ea5e9';   // glass/detail color
+  const gf = frameColorOverride ? frameColorOverride + '22' : '#dbeafe';   // glass fill
   const sw = Math.max(2, Math.round(Math.min(W,H)/30)); // stroke adaptivo
 
   const label = anchoMm + 'x' + altoMm + 'mm';
@@ -5109,7 +5123,7 @@ function svgModulo(secsRaw, altoMm, maxW, maxH) {
 }
 
 // SVG para módulo vertical — secciones apiladas de arriba a abajo
-function svgModuloV(secciones, anchomm, maxW, maxH) {
+function svgModuloV(secciones, anchomm, maxW, maxH, frameColorOverride) {
   if (!secciones || !secciones.length) return '';
   maxW = maxW || 120; maxH = maxH || 200;
   const altoTotal = secciones.reduce((s, sec) => s + Number(sec.alto || 0), 0);
@@ -5125,11 +5139,9 @@ function svgModuloV(secciones, anchomm, maxW, maxH) {
     + secciones.map((sec, si) => {
         const secHpx = Math.max(20, Math.round((Number(sec.alto || 0) / altoTotal) * H));
         const _sp = (typeof sec.params === 'object' ? sec.params : null) || tryParse(sec.params, {}) || {};
-        const secSvg = svgAbertura(sec.tipologia_id, anchomm, Number(sec.alto || 0), W, secHpx, _sp);
+        const secSvg = svgAbertura(sec.tipologia_id, anchomm, Number(sec.alto || 0), W, secHpx, _sp, frameColorOverride);
         return '<div style="display:flex;flex-direction:row;align-items:center;width:100%;">'
           + secSvg
-          + '<div style="font-size:8px;color:#64748b;margin-left:4px;white-space:nowrap;">'
-          + anchomm + 'x' + sec.alto + 'mm</div>'
           + '</div>';
       }).join('')
     + '</div>';
@@ -5507,7 +5519,7 @@ function imprimirPresupuesto(id) {
           if (_isVert) {
             // Módulo vertical: usar svgModuloV
             const _secsV = _secsArr.map(s => ({ ...s, alto: Number(s.alto) || Number(a.alto) }));
-            return svgModuloV(_secsV, Number(a.ancho), 120, 180);
+            return svgModuloV(_secsV, Number(a.ancho), 120, 180, _resolverColorAluminio(p.color_al));
           }
           // Módulo horizontal: secciones lado a lado
           const _maxTotalW = 200, _maxH = 110;
@@ -5522,16 +5534,15 @@ function imprimirPresupuesto(id) {
             + _secsArr.map((sec, _si) => {
                 const _sp = tryParse(sec.params, {}) || {};
                 const _secWpx = Math.max(20, Math.round((Number(sec.ancho) / _anchoTotal) * _totalW));
-                const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), _altoMm, _secWpx, _sharedH, _sp);
+                const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), _altoMm, _secWpx, _sharedH, _sp, _resolverColorAluminio(p.color_al));
                 const _isLast = _si === _secsArr.length - 1;
                 return '<div style="display:flex;flex-direction:column;align-items:center;">'
                   + _secSvg
-                  + '<div style="font-size:8px;color:#64748b;text-align:center;margin-top:2px;white-space:nowrap;">' + sec.ancho + 'x' + a.alto + 'mm</div>'
                   + '</div>';
               }).join('')
             + '</div>';
         })())
-      : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
+      : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}), _resolverColorAluminio(p.color_al));
     // Get gif_url from tipologia config
     const _cfgGif = a.es_modulo ? null : getConfigTipo(a.linea_id, a.tipo_id);
     const gifUrl = _cfgGif?.gif_url || '';
