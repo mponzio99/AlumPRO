@@ -4881,9 +4881,9 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params, frameColorOve
   const iW = W - pad*2;  // interior width
   const iH = H - pad*2;  // interior height
   const cx = W/2, cy = H/2;
-  const fc = frameColorOverride || '#1e3a5f';   // frame color
-  const gc = frameColorOverride ? frameColorOverride + 'cc' : '#0ea5e9';   // glass/detail color
-  const gf = frameColorOverride ? frameColorOverride + '22' : '#dbeafe';   // glass fill
+  const fc = '#1e3a5f';   // frame color
+  const gc = '#0ea5e9';   // glass/detail color
+  const gf = '#dbeafe';   // glass fill
   const sw = Math.max(2, Math.round(Math.min(W,H)/30)); // stroke adaptivo
 
   const label = anchoMm + 'x' + altoMm + 'mm';
@@ -5133,18 +5133,29 @@ function svgModuloV(secciones, anchomm, maxW, maxH, frameColorOverride) {
   if (ratio >= 1) { W = maxW; H = Math.round(maxW / ratio); if (H > maxH) { H = maxH; W = Math.round(maxH * ratio); } }
   else { H = maxH; W = Math.round(maxH * ratio); if (W > maxW) { W = maxW; H = Math.round(maxW / ratio); } }
   W = Math.max(W, 40); H = Math.max(H, 40);
+  const fc = '#1e3a5f';
+  const totalH = H + 18;
 
-  // Dibujar cada sección usando svgAbertura, apiladas verticalmente
-  return '<div style="display:flex;flex-direction:column;gap:0;align-items:center;">'
-    + secciones.map((sec, si) => {
-        const secHpx = Math.max(20, Math.round((Number(sec.alto || 0) / altoTotal) * H));
-        const _sp = (typeof sec.params === 'object' ? sec.params : null) || tryParse(sec.params, {}) || {};
-        const secSvg = svgAbertura(sec.tipologia_id, anchomm, Number(sec.alto || 0), W, secHpx, _sp, frameColorOverride);
-        return '<div style="display:flex;flex-direction:row;align-items:center;width:100%;">'
-          + secSvg
-          + '</div>';
-      }).join('')
-    + '</div>';
+  // Un solo SVG con secciones apiladas (igual que svgModulo pero vertical)
+  let interior = '';
+  let yOffset = 0;
+  for (const sec of secciones) {
+    const secHpx = Math.max(10, Math.round((Number(sec.alto || 0) / altoTotal) * H));
+    const _sp = (typeof sec.params === 'object' ? sec.params : null) || tryParse(sec.params, {}) || {};
+    const secSvg = svgAbertura(sec.tipologia_id, anchomm, Number(sec.alto || 0), W, secHpx, _sp);
+    // Extraer contenido interno del SVG (sin etiqueta svg exterior ni label de medidas)
+    const svgContent = secSvg
+      .replace(/<svg[^>]*>/, '')
+      .replace(/<\/svg>/, '')
+      .replace(/<text[^>]*>[\s\S]*?<\/text>/g, '');
+    interior += '<g transform="translate(0,' + yOffset + ')">' + svgContent + '</g>';
+    yOffset += secHpx;
+  }
+
+  return '<svg width="' + W + '" height="' + totalH + '" viewBox="0 0 ' + W + ' ' + totalH + '" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;">'
+    + interior
+    + '<text x="' + (W/2) + '" y="' + (totalH-2) + '" text-anchor="middle" font-size="8" fill="' + fc + '" font-family="monospace" font-weight="600">' + anchomm + 'x' + altoTotal + 'mm</text>'
+    + '</svg>';
 }
 
 // Convierte SVG a PNG data URI via Canvas (para Word)
@@ -5519,7 +5530,7 @@ function imprimirPresupuesto(id) {
           if (_isVert) {
             // Módulo vertical: usar svgModuloV
             const _secsV = _secsArr.map(s => ({ ...s, alto: Number(s.alto) || Number(a.alto) }));
-            return svgModuloV(_secsV, Number(a.ancho), 120, 180, _resolverColorAluminio(p.color_al));
+            return svgModuloV(_secsV, Number(a.ancho), 120, 180);
           }
           // Módulo horizontal: secciones lado a lado
           const _maxTotalW = 200, _maxH = 110;
@@ -5534,7 +5545,7 @@ function imprimirPresupuesto(id) {
             + _secsArr.map((sec, _si) => {
                 const _sp = tryParse(sec.params, {}) || {};
                 const _secWpx = Math.max(20, Math.round((Number(sec.ancho) / _anchoTotal) * _totalW));
-                const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), _altoMm, _secWpx, _sharedH, _sp, _resolverColorAluminio(p.color_al));
+                const _secSvg = svgAbertura(sec.tipologia_id, Number(sec.ancho), _altoMm, _secWpx, _sharedH, _sp);
                 const _isLast = _si === _secsArr.length - 1;
                 return '<div style="display:flex;flex-direction:column;align-items:center;">'
                   + _secSvg
@@ -5542,7 +5553,7 @@ function imprimirPresupuesto(id) {
               }).join('')
             + '</div>';
         })())
-      : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}), _resolverColorAluminio(p.color_al));
+      : svgAbertura(a.tipo_id, a.ancho, a.alto, 130, 180, tryParse(a.params, {}));
     // Get gif_url from tipologia config
     const _cfgGif = a.es_modulo ? null : getConfigTipo(a.linea_id, a.tipo_id);
     const gifUrl = _cfgGif?.gif_url || '';
