@@ -721,7 +721,8 @@ function calcularModulo(a, perfilesDB, herrajesDB) {
   for (const sec of secciones) {
     const tipoMetaM = state.tipologias_custom.find(t => t.id === sec.tipologia_id);
     const hojasM = Number(sec.hojas) || Number(tipoMetaM?.hojas_default) || 1;
-    const params = { ...(tryParse(a.params, {})), tipo_vidrio: sec.tipo_vidrio || 'vcomon', hojas: hojasM };
+    const secParams = (typeof sec.params === 'object' && sec.params !== null) ? sec.params : (tryParse(sec.params, {}) || {});
+    const params = { ...secParams, tipo_vidrio: sec.tipo_vidrio || 'vcomon', hojas: hojasM };
     const altoSecM = Number(sec.alto) || alto;
     const cortes = getCortesRaw(a.linea_id, sec.tipologia_id, Number(sec.ancho), altoSecM, params, perfilesDB);
     for (const c of cortes) {
