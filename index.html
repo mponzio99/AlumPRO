@@ -3760,7 +3760,7 @@ function _renderModuloCard(a, c, cTotal) {
       seccionesHtml += '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--bg);border-radius:8px;margin-bottom:6px;">'
         + '<div style="flex:1;">'
         +   '<div style="font-size:13px;color:var(--text);font-weight:600;">' + sec.nombre + '</div>'
-        +   '<div style="font-size:11px;color:var(--text3);">' + sec.ancho + 'x' + a.alto + 'mm · '
+        +   '<div style="font-size:11px;color:var(--text3);">' + (isVert ? a.ancho + 'x' + (sec.alto||a.alto) : sec.ancho + 'x' + a.alto) + 'mm · '
         +     '<span style="color:' + _secTvColor + ';">' + _secTvNombre + '</span>'
         +     _secTabInfo
         +   '</div>'
@@ -5586,7 +5586,7 @@ function imprimirPresupuesto(id) {
             const _tabInfo = Number(_sp?.pct_tablillas) > 0
               ? ' · <span style="color:#f59e0b;font-weight:600;">' + _sp.pct_tablillas + '% tablillas</span>' : '';
             return '<div style="font-size:11px;color:#475569;padding:1px 0;">'
-              + '<b>' + sec.nombre + '</b> · ' + sec.ancho + 'x' + a.alto + 'mm'
+              + '<b>' + sec.nombre + '</b> · ' + (a.modulo_orient === 'v' ? a.ancho + 'x' + (sec.alto || a.alto) : sec.ancho + 'x' + a.alto) + 'mm'
               + ' · <span style="color:' + _tvColor + ';font-weight:600;">' + _tvNombre + '</span>'
               + _tabInfo
               + '</div>';
