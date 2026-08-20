@@ -4887,7 +4887,8 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params, frameColorOve
   const gf = '#dbeafe';   // glass fill
   const sw = Math.max(2, Math.round(Math.min(W,H)/30)); // stroke adaptivo
 
-  const label = anchoMm + 'x' + altoMm + 'mm';
+    const labelAncho = anchoMm + 'mm';
+  const labelAlto = altoMm + 'mm';
   const labelY = H + 14;
   const totalH = H + 18;
 
@@ -5079,7 +5080,8 @@ function svgAbertura(tipo_id, anchoMm, altoMm, maxW, maxH, params, frameColorOve
     + tabOverlay
     + (_pctTab === 0 ? '' : interior)
     // Etiqueta de medidas
-    + '<text x="'+cx+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="9" fill="'+fc+'" font-family="monospace" font-weight="600">'+label+'</text>'
+        + '<text x="'+cx+'" y="'+(totalH-2)+'" text-anchor="middle" font-size="9" fill="'+fc+'" font-family="monospace" font-weight="600">'+labelAncho+'</text>'
+    + '<text x="8" y="'+(H/2)+'" text-anchor="middle" font-size="8" fill="'+fc+'" font-family="monospace" font-weight="600" transform="rotate(-90,8,'+(H/2)+')">'+labelAlto+'</text>'
     + '</svg>';
 }
 
